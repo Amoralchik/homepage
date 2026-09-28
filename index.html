@@ -14,7 +14,8 @@
   <canvas id="bg" aria-hidden="true"></canvas>
 
   <main class="page">
-    <section class="search" id="search">
+    <div class="center-wrap">
+      <section class="search" id="search">
       <input
         id="query"
         type="text"
@@ -50,13 +51,39 @@
     </section>
 
     <div class="pill" id="pill">
-      <span class="pill-seg">home</span>
+      <span class="pill-seg" id="pill-label">home</span>
       <span class="pill-slash">/</span>
       <span class="pill-seg" id="clock">--:--</span>
       <span class="pill-dot">·</span>
       <span class="pill-seg" id="date">&nbsp;</span>
     </div>
+    </div>
   </main>
+
+  <button class="settings-btn" id="settings-btn" type="button" aria-label="Settings" aria-expanded="false">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="2"/>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+
+  <div class="settings" id="settings">
+    <label class="set-row">
+      <span class="set-name">Text</span>
+      <input class="set-input" id="set-label" type="text" maxlength="24" spellcheck="false"
+             autocomplete="off" placeholder="home" aria-label="Pill text" />
+    </label>
+    <div class="set-row">
+      <span class="set-name">Phase</span>
+      <div class="phase-opts" id="phase-opts" role="group" aria-label="Freeze time of day">
+        <button type="button" data-phase="auto">Auto</button>
+        <button type="button" data-phase="morning">Morning</button>
+        <button type="button" data-phase="day">Day</button>
+        <button type="button" data-phase="evening">Evening</button>
+        <button type="button" data-phase="night">Night</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="hint">
     <span class="key">/</span> focus &nbsp;·&nbsp; <span class="key">Enter</span> search &nbsp;·&nbsp; <span class="key">Ctrl K</span> from anywhere

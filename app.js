@@ -55,18 +55,18 @@ const DayCycle = (() => {
   // representative hours used when a phase is forced via config/?phase=
   const FORCE_HOUR = { morning: 8.5, day: 14, evening: 19.5, night: 2 };
 
-  function clockHour(date) {
-    return CONFIG.forcePhase && FORCE_HOUR[CONFIG.forcePhase] !== undefined
-      ? FORCE_HOUR[CONFIG.forcePhase]
+  function clockHour(date, forced) {
+    return forced && FORCE_HOUR[forced] !== undefined
+      ? FORCE_HOUR[forced]
       : date.getHours() + date.getMinutes() / 60;
   }
 
   const lerp = (a, b, k) => a + (b - a) * k;
   const lerpColor = (a, b, k) => [0, 1, 2].map(i => Math.round(lerp(a[i], b[i], k)));
 
-  function current(date) {
-    if (CONFIG.forcePhase && PALETTES[CONFIG.forcePhase]) {
-      return { name: CONFIG.forcePhase, next: CONFIG.forcePhase, f: 0.5, k: 0 };
+  function current(date, forced) {
+    if (forced && PALETTES[forced]) {
+      return { name: forced, next: forced, f: 0.5, k: 0 };
     }
     const h = date.getHours() + date.getMinutes() / 60;
     let idx = PHASES.length - 1;
@@ -81,8 +81,8 @@ const DayCycle = (() => {
     return { name: cur.name, next: next.name, f, k };
   }
 
-  function palette(date) {
-    const { name, next, k } = current(date);
+  function palette(date, forced) {
+    const { name, next, k } = current(date, forced);
     const a = PALETTES[name], b = PALETTES[next];
     const out = { phase: name };
     for (const key of ['skyTop', 'skyBot', 'gridDim', 'gridBright', 'sparkle', 'sunGlow']) {
@@ -96,13 +96,13 @@ const DayCycle = (() => {
 
   // both luminaries travel left → right: the sun from 06:00 to 21:00,
   // the moon across the night from 21:00 to 06:00 (fractions of the screen)
-  function sunPos(date) {
-    const p = Math.max(0, Math.min(1, (clockHour(date) - 6) / 15));
+  function sunPos(date, forced) {
+    const p = Math.max(0, Math.min(1, (clockHour(date, forced) - 6) / 15));
     return { x: 0.14 + 0.72 * p, y: 0.55 - 0.45 * Math.sin(p * Math.PI) };
   }
 
-  function moonPos(date) {
-    const p = Math.max(0, Math.min(1, ((clockHour(date) - 21 + 24) % 24) / 9));
+  function moonPos(date, forced) {
+    const p = Math.max(0, Math.min(1, ((clockHour(date, forced) - 21 + 24) % 24) / 9));
     return { x: 0.14 + 0.72 * p, y: 0.52 - 0.40 * Math.sin(p * Math.PI) };
   }
 
@@ -392,16 +392,85 @@ const bgApi = (function background() {
 
   /* ---------- day/night theming ---------- */
 
+  const VALID_PHASES = ['morning', 'day', 'evening', 'night'];
+
+  function forcedPhase() {
+    // URL preview wins, then a phase frozen in settings, then the real clock
+    if (CONFIG.forcePhase && VALID_PHASES.includes(CONFIG.forcePhase)) return CONFIG.forcePhase;
+    try {
+      const p = localStorage.getItem('home:phase');
+      if (p && VALID_PHASES.includes(p)) return p;
+    } catch (e) { }
+    return null;
+  }
+
   function applyDayCycle() {
     const now = new Date();
-    const info = DayCycle.current(now);
+    const forced = forcedPhase();
+    const info = DayCycle.current(now, forced);
     if (document.body.dataset.phase !== info.name) {
       document.body.dataset.phase = info.name;
     }
-    bgApi.setPalette(DayCycle.palette(now), DayCycle.sunPos(now), DayCycle.moonPos(now));
+    bgApi.setPalette(DayCycle.palette(now, forced), DayCycle.sunPos(now, forced), DayCycle.moonPos(now, forced));
   }
   applyDayCycle();
   setInterval(applyDayCycle, 30 * 1000);
+
+  /* ---------- settings ---------- */
+
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsEl = document.getElementById('settings');
+  const labelInput = document.getElementById('set-label');
+  const pillLabel = document.getElementById('pill-label');
+  const phaseOpts = document.getElementById('phase-opts');
+
+  function store(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { }
+  }
+  function loadStored(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  // pill text
+  const savedLabel = (loadStored('home:label') || '').trim() || 'home';
+  pillLabel.textContent = savedLabel;
+  labelInput.value = savedLabel === 'home' ? '' : savedLabel;
+  labelInput.addEventListener('input', () => {
+    const v = labelInput.value.trim() || 'home';
+    pillLabel.textContent = v;
+    store('home:label', v);
+  });
+
+  // frozen phase
+  function renderPhaseOpts() {
+    const cur = loadStored('home:phase') || 'auto';
+    for (const b of phaseOpts.children) {
+      b.classList.toggle('active', b.dataset.phase === cur);
+    }
+  }
+  phaseOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-phase]');
+    if (!b) return;
+    store('home:phase', b.dataset.phase);
+    renderPhaseOpts();
+    applyDayCycle();
+  });
+  renderPhaseOpts();
+
+  function setSettings(open) {
+    settingsEl.classList.toggle('open', open);
+    settingsBtn.setAttribute('aria-expanded', String(open));
+  }
+  settingsBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    setSettings(!settingsEl.classList.contains('open'));
+  });
+  document.addEventListener('click', e => {
+    if (!settingsEl.contains(e.target) && !settingsBtn.contains(e.target)) setSettings(false);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && settingsEl.classList.contains('open')) setSettings(false);
+  });
 
   function renderProvider() {
     ico.textContent = provider.letter;
@@ -677,9 +746,10 @@ const bgApi = (function background() {
     }
   });
 
-  // global shortcuts: "/" or Ctrl/Cmd+K focuses the box
+  // global shortcuts: "/" or Ctrl/Cmd+K focuses the box (not while typing elsewhere)
   document.addEventListener('keydown', e => {
-    if (e.key === '/' && document.activeElement !== input) {
+    const inField = document.activeElement instanceof HTMLInputElement;
+    if (e.key === '/' && document.activeElement !== input && !inField) {
       e.preventDefault();
       input.focus();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {

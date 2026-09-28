@@ -141,11 +141,16 @@ body::before {
   position: relative;
   height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0 20px;
-  transform: translateY(-4vh);
+}
+
+/* only the search box is in flow, so it sits exactly on the center line;
+   the pill hangs below it without affecting the centering */
+.center-wrap {
+  position: relative;
+  width: min(720px, 92vw);
 }
 
 /* ---------- search box ---------- */
@@ -360,10 +365,13 @@ body::before {
 /* ---------- breadcrumb pill ---------- */
 
 .pill {
+  position: absolute;
+  top: calc(100% + 30px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 30px;
   padding: 9px 16px;
   border-radius: 10px;
   border: 1px solid var(--pill-border);
@@ -371,7 +379,8 @@ body::before {
   font: 400 11.5px/1 "Silkscreen", "Courier New", monospace;
   letter-spacing: 0.06em;
   color: var(--pill-text);
-  animation: rise 0.7s 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  white-space: nowrap;
+  animation: fade 0.7s 0.16s both;
   transition: background 1s ease, border-color 1s ease, color 1s ease;
 }
 
@@ -402,9 +411,119 @@ body::before {
   color: var(--key-fg);
 }
 
+/* ---------- settings ---------- */
+
+.settings-btn {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--pill-border);
+  border-radius: 50%;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  cursor: pointer;
+  transition: color 0.15s, transform 0.25s, background 1s ease, border-color 1s ease;
+  z-index: 20;
+}
+
+.settings-btn:hover { color: var(--text); transform: rotate(30deg); }
+.settings-btn:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; }
+
+.settings {
+  position: fixed;
+  right: 18px;
+  bottom: 66px;
+  width: 300px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--suggest-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 50px var(--edge);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 0.16s, transform 0.16s;
+  z-index: 20;
+}
+
+.settings.open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.set-row + .set-row { margin-top: 12px; }
+
+.set-name {
+  flex: none;
+  width: 48px;
+  color: var(--text-3);
+  font: 500 11px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.set-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--key-bg);
+  color: var(--text);
+  font: 500 13px/1.2 "Inter", system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.set-input:focus { border-color: var(--border-strong); }
+.set-input::placeholder { color: var(--text-3); }
+
+.phase-opts {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.phase-opts button {
+  padding: 5px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--key-border);
+  background: var(--key-bg);
+  color: var(--key-fg);
+  font: 500 11.5px/1 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.phase-opts button:hover { color: var(--text); }
+.phase-opts button.active {
+  background: var(--chip-bg);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -24,6 +24,11 @@ works normally.
 `localhost:3000` — and a globe row with an `OPEN LINK` tag appears above the suggestions;
 `Enter` opens the site directly (`https://` is added for you). Plain text just searches.
 
+**Settings:** the gear in the bottom-right corner opens a small panel where you can set
+the pill text (anything you like — your name, a project, …) and **freeze** the time of
+day to Morning / Day / Evening / Night instead of following the clock. Both are stored
+in localStorage; pick **Auto** to return to the real clock.
+
 **Day/night cycle:** the whole page follows the local clock — sunny warm **morning**
 (06–11), clear blue **day** (11–17), dusky orange **evening** (17–21), and the starry
 **night** (21–06) with the moon. The sun and moon both travel **left → right** across
