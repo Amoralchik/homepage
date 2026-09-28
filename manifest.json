@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Home",
+  "version": "1.0.0",
+  "description": "Pixel-art start page with a flickering grid and multi-provider search.",
+  "host_permissions": [
+    "https://suggestqueries.google.com/*",
+    "https://duckduckgo.com/*",
+    "https://ac.duckduckgo.com/*"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  }
+}
