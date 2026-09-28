@@ -4,6 +4,12 @@ A minimal pixel-art start page for Chrome, styled after the opencode launcher: a
 **flickering grid** (Velora-style staggered fades), twinkling pixel stars, a pixel sun/moon
 that arcs with the clock, and a centered search box with a **provider dropdown**.
 
+| Night | Morning |
+|---|---|
+| ![Night theme](docs/screenshots/night.png) | ![Morning theme](docs/screenshots/morning.png) |
+| **Day** | **Evening** |
+| ![Day theme](docs/screenshots/day.png) | ![Evening theme](docs/screenshots/evening.png) |
+
 Providers: **Google · DuckDuckGo · Perplexity**
 The choice is remembered (localStorage). `Enter` searches, `/` or `Ctrl+K` focuses the box.
 
@@ -33,20 +39,21 @@ anytime with `?phase=morning` / `day` / `evening` / `night` in the URL (or set
 |----------------|--------------------------------------------------|
 | `index.html`   | Page markup                                      |
 | `style.css`    | Layout, search box, dropdown, pill, hints        |
-| `app.js`       | Flickering-grid canvas, stars/moon, search logic |
+| `app.js`       | Flickering-grid canvas, sun/moon, search logic   |
 | `manifest.json` | Makes the folder a load-unpacked Chrome extension |
+| `serve.py`     | Optional dev preview server (no-cache headers)   |
 
 ## Install as the New Tab page (recommended)
 
 1. Open `chrome://extensions`
 2. Turn on **Developer mode** (top right)
-3. Click **Load unpacked** and select this folder (`C:\Users\AmoralchikPC\dev\homepage`)
+3. Click **Load unpacked** and select this folder
 4. Open a new tab — done.
 
 ## Or set it as the Home / startup page
 
 - **Home button:** `chrome://settings/appearance` → enable *Show home button* →
-  enter `file:///C:/Users/AmoralchikPC/dev/homepage/index.html`
+  enter the `file:///` URL of `index.html` on your machine
 - **On startup:** `chrome://settings/onStartup` → *Open a specific page* → add the same `file:///` URL.
 
 Note: Chrome does not allow extensions to replace the new-tab page from a plain settings URL —
