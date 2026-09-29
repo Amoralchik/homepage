@@ -534,7 +534,8 @@ const bgApi = (function background() {
   function loadWidgets() {
     try {
       const v = JSON.parse(localStorage.getItem('home:widgets'));
-      return Array.isArray(v) ? [...new Set(v.filter(t => WIDGETS[t]))] : [];
+      // unknown types are kept — they may be provided by personal mods.js later
+      return Array.isArray(v) ? [...new Set(v)] : [];
     } catch (e) { return []; }
   }
   function saveWidgets(list) { store('home:widgets', JSON.stringify([...new Set(list)])); }
@@ -561,6 +562,7 @@ const bgApi = (function background() {
     head.appendChild(name);
     head.appendChild(rm);
     card.appendChild(head);
+    card.dataset.type = type;
 
     const body = document.createElement('div');
     body.className = 'mod-card-body';
@@ -649,6 +651,25 @@ const bgApi = (function background() {
   renderAddMenu();
   renderEmptyHint();
   setLayer(loadStored('home:layerOpen') !== '0');
+
+  // personal local mods: a gitignored mods.js registers extra widgets here
+  // (missing file is normal — the script tag silently removes itself)
+  window.HOME_MODS = {
+    register(id, def) {
+      if (!id || !def || typeof def.mount !== 'function' || WIDGETS[id]) return;
+      WIDGETS[id] = { name: def.name || id, blurb: def.blurb || '', mount: def.mount };
+      const mounted = [...modBody.querySelectorAll('.mod-card')].map(c => c.dataset.type);
+      loadWidgets().forEach(t => {
+        if (t === id && !mounted.includes(id)) addWidget(id, true);
+      });
+      renderAddMenu();
+      renderEmptyHint();
+    },
+  };
+  const modsScript = document.createElement('script');
+  modsScript.src = 'mods.js';
+  modsScript.addEventListener('error', () => modsScript.remove());
+  document.head.appendChild(modsScript);
 
   function renderProvider() {
     ico.textContent = provider.letter;

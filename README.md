@@ -87,6 +87,28 @@ suggest endpoint — same suggestions, no install needed.
 - **Grid look:** `PITCH` / `SIZE` (square spacing), `DIM` / `BRIGHT` (colors) in `app.js`.
 - Reduced-motion users get a static dim grid (animation disabled), same as Velora's component.
 
+## Personal mods (local only)
+
+Want a private widget that never lands in the repo (a real bus tracker for *your* stop,
+a personal countdown, …)? Create a `mods.js` file next to `index.html` — it is
+gitignored and loaded automatically if present:
+
+```js
+HOME_MODS.register('my-widget', {
+  name: 'My widget',
+  blurb: 'shows up in the layer’s + menu',
+  mount(body) {
+    // draw into body; return a cleanup function (optional)
+  },
+});
+```
+
+A practical example ships as the default content: a **De Lijn bus tracker** for a
+specific stop that counts down an editable departure timetable and pops a small
+bottom-center alert when the next bus is within 30 minutes — with a marked hook to
+switch to the official live API using a free [developer.delijn.be](https://developer.delijn.be)
+key (the extension manifest already whitelists `api.delijn.be`).
+
 ## Contributing
 
 Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
