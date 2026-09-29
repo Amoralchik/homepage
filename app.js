@@ -472,6 +472,184 @@ const bgApi = (function background() {
     if (e.key === 'Escape' && settingsEl.classList.contains('open')) setSettings(false);
   });
 
+  /* ---------- mod layer (widgets) ---------- */
+
+  // Add a widget by registering it here: mount(cardBody) draws the content
+  // and may return a cleanup function; persistence is handled by the layer.
+  const WIDGETS = {
+    bus: {
+      name: 'Bus tracker',
+      blurb: 'Next arrivals, simulated feed',
+      mount(body) {
+        const lines = [
+          { n: '8', dest: 'Center' },
+          { n: '15', dest: 'Station' },
+          { n: '23', dest: 'Airport' },
+        ];
+        const head = document.createElement('div');
+        head.className = 'wg-bus-head';
+        head.innerHTML = '<span class="live-dot"></span><span>NEXT ARRIVALS · SIM</span>';
+        const list = document.createElement('div');
+        list.className = 'wg-bus-list';
+        body.appendChild(head);
+        body.appendChild(list);
+
+        const rows = lines.map(l => ({ ...l, at: Date.now() + (45 + Math.random() * 840) * 1000 }));
+        const fmt = ms => {
+          const s = Math.max(0, Math.round(ms / 1000));
+          return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        };
+
+        const render = () => {
+          const now = Date.now();
+          list.innerHTML = '';
+          for (const r of rows) {
+            if (r.at - now < 0) r.at = now + (480 + Math.random() * 900) * 1000;
+            const row = document.createElement('div');
+            row.className = 'wg-bus-row';
+            row.innerHTML =
+              `<span class="wg-badge">${r.n}</span>` +
+              `<span class="wg-dest">${r.dest}</span>` +
+              `<span class="wg-eta">${fmt(r.at - now)}</span>`;
+            list.appendChild(row);
+          }
+        };
+        render();
+        const timer = setInterval(render, 1000);
+        return () => clearInterval(timer);
+      },
+    },
+  };
+
+  const modTab = document.getElementById('mod-tab');
+  const modLayer = document.getElementById('mod-layer');
+  const modBody = document.getElementById('mod-body');
+  const modAdd = document.getElementById('mod-add');
+  const modHide = document.getElementById('mod-hide');
+  const modAddMenu = document.getElementById('mod-add-menu');
+
+  let widgetSeq = 0;
+  const widgetCleanups = new Map();
+
+  function loadWidgets() {
+    try {
+      const v = JSON.parse(localStorage.getItem('home:widgets'));
+      return Array.isArray(v) ? [...new Set(v.filter(t => WIDGETS[t]))] : [];
+    } catch (e) { return []; }
+  }
+  function saveWidgets(list) { store('home:widgets', JSON.stringify([...new Set(list)])); }
+
+  function addWidget(type, restore = false) {
+    const def = WIDGETS[type];
+    if (!def) return;
+    const id = ++widgetSeq;
+
+    const card = document.createElement('div');
+    card.className = 'mod-card';
+    card.dataset.idx = id;
+
+    const head = document.createElement('div');
+    head.className = 'mod-card-head';
+    const name = document.createElement('span');
+    name.textContent = def.name;
+    const rm = document.createElement('button');
+    rm.className = 'mod-remove';
+    rm.type = 'button';
+    rm.textContent = '×';
+    rm.title = 'Remove widget';
+    rm.addEventListener('click', () => removeWidget(id, type));
+    head.appendChild(name);
+    head.appendChild(rm);
+    card.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'mod-card-body';
+    card.appendChild(body);
+    modBody.appendChild(card);
+
+    widgetCleanups.set(id, def.mount ? def.mount(body) : null);
+
+    if (!restore) {
+      const list = loadWidgets();
+      list.push(type);
+      saveWidgets(list);
+      renderAddMenu();
+      renderEmptyHint();
+    }
+  }
+
+  function removeWidget(id, type) {
+    const card = modBody.querySelector(`.mod-card[data-idx="${id}"]`);
+    if (card) card.remove();
+    widgetCleanups.get(id)?.();
+    widgetCleanups.delete(id);
+    const list = loadWidgets();
+    const pos = list.indexOf(type);
+    if (pos !== -1) list.splice(pos, 1);
+    saveWidgets(list);
+    renderAddMenu();
+    renderEmptyHint();
+  }
+
+  function renderEmptyHint() {
+    modBody.querySelector('.mod-empty')?.remove();
+    if (modBody.querySelector('.mod-card')) return;
+    const hint = document.createElement('div');
+    hint.className = 'mod-empty';
+    hint.textContent = 'Empty layer — add a widget with +';
+    modBody.appendChild(hint);
+  }
+
+  function renderAddMenu() {
+    const counts = {};
+    loadWidgets().forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+    modAddMenu.innerHTML = '';
+    for (const [type, def] of Object.entries(WIDGETS)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      const added = (counts[type] || 0) > 0;
+      if (added) b.disabled = true;
+      b.innerHTML = `<strong>${def.name}</strong><span>${added ? 'already on the layer' : def.blurb}</span>`;
+      b.addEventListener('click', () => {
+        if (b.disabled) return;
+        addWidget(type);
+        modAddMenu.classList.remove('open');
+      });
+      modAddMenu.appendChild(b);
+    }
+  }
+
+  function setLayer(open) {
+    modLayer.classList.toggle('open', open);
+    modTab.setAttribute('aria-expanded', String(open));
+    store('home:layerOpen', open ? '1' : '0');
+  }
+
+  modTab.addEventListener('click', () => setLayer(!modLayer.classList.contains('open')));
+  modHide.addEventListener('click', () => setLayer(false));
+  modAdd.addEventListener('click', e => {
+    e.stopPropagation();
+    renderAddMenu();
+    modAddMenu.classList.toggle('open');
+  });
+  document.addEventListener('click', e => {
+    if (!modAddMenu.contains(e.target) && e.target !== modAdd) modAddMenu.classList.remove('open');
+  });
+  document.addEventListener('keydown', e => {
+    const inField = document.activeElement instanceof HTMLInputElement;
+    if ((e.key === 'w' || e.key === 'W') && !inField && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      setLayer(!modLayer.classList.contains('open'));
+    }
+  });
+
+  // first run seeds the bus tracker; afterwards the saved set is restored as-is
+  if (loadStored('home:widgets') === null) saveWidgets(['bus']);
+  loadWidgets().forEach(t => addWidget(t, true));
+  saveWidgets(loadWidgets()); // normalize any legacy duplicates
+  renderAddMenu();
+  renderEmptyHint();
+  setLayer(loadStored('home:layerOpen') !== '0');
+
   function renderProvider() {
     ico.textContent = provider.letter;
     nameEl.textContent = provider.name;

@@ -29,6 +29,13 @@ the pill text (anything you like — your name, a project, …) and **freeze** t
 day to Morning / Day / Evening / Night instead of following the clock. Both are stored
 in localStorage; pick **Auto** to return to the real clock.
 
+**Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
+mod-like layer docked above the button — a HUD that hosts small persistent widgets.
+It ships with a **Bus tracker** (live countdowns, simulated feed) and remembers which
+widgets you added across sessions. The layer overlays the page without blocking the
+grid or the search box. New widgets are one registry entry away — see the
+`WIDGETS` object in `app.js`.
+
 **Day/night cycle:** the whole page follows the local clock — sunny warm **morning**
 (06–11), clear blue **day** (11–17), dusky orange **evening** (17–21), and the starry
 **night** (21–06) with the moon. The sun and moon both travel **left → right** across
@@ -74,6 +81,9 @@ suggest endpoint — same suggestions, no install needed.
 ## Customizing
 
 - **Providers:** edit the `PROVIDERS` array in `app.js` (name, letter chip, search URL template).
+- **Widgets:** add an entry to the `WIDGETS` registry in `app.js` — `name`, `blurb`,
+  and a `mount(body)` function that draws the widget (optionally returning a cleanup
+  function). It then appears in the layer's `+` menu automatically.
 - **Grid look:** `PITCH` / `SIZE` (square spacing), `DIM` / `BRIGHT` (colors) in `app.js`.
 - Reduced-motion users get a static dim grid (animation disabled), same as Velora's component.
 

@@ -89,6 +89,27 @@
     <span class="key">/</span> focus &nbsp;·&nbsp; <span class="key">Enter</span> search &nbsp;·&nbsp; <span class="key">Ctrl K</span> from anywhere
   </footer>
 
+  <button class="mod-tab" id="mod-tab" type="button" aria-label="Toggle widget layer" aria-expanded="false">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" stroke="currentColor" stroke-width="2"/>
+      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" stroke="currentColor" stroke-width="2"/>
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" stroke="currentColor" stroke-width="2"/>
+      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" stroke="currentColor" stroke-width="2"/>
+    </svg>
+  </button>
+
+  <aside class="mod-layer" id="mod-layer" aria-label="Widget layer">
+    <header class="mod-head">
+      <span class="mod-title">WIDGETS</span>
+      <div class="mod-head-actions">
+        <button class="mod-icon-btn" id="mod-add" type="button" title="Add widget" aria-label="Add widget">+</button>
+        <button class="mod-icon-btn" id="mod-hide" type="button" title="Hide layer" aria-label="Hide layer">×</button>
+      </div>
+      <div class="mod-add-menu" id="mod-add-menu"></div>
+    </header>
+    <div class="mod-body" id="mod-body"></div>
+  </aside>
+
   <script src="app.js"></script>
 </body>
 </html>
