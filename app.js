@@ -109,6 +109,58 @@ const DayCycle = (() => {
   return { current, palette, sunPos, moonPos };
 })();
 
+/* ================= themes ================= */
+/* Each theme recolors the celestial body (planet/sun) and the UI accents;
+   the day/night phases keep controlling sky brightness and sun position. */
+
+const THEMES = {
+  classic: {
+    moonRamp: ['#24348c', '#4160c8', '#7492f0', '#b3c6ff'],
+    sunRamp: ['#ff8f2e', '#ffb03a', '#ffd45e', '#fff2c8'],
+    glow: [99, 132, 255],
+  },
+  dark: {
+    moonRamp: ['#12182b', '#232f4d', '#37456b', '#4e5f8a'],
+    sunRamp: ['#37456b', '#4e5f8a', '#6d82ad', '#93a6cc'],
+    glow: [90, 110, 160],
+  },
+  bright: {
+    moonRamp: ['#8fa8d9', '#b0c4ea', '#d2e0fb', '#ffffff'],
+    sunRamp: ['#ffd98a', '#ffe7ae', '#fff3d2', '#ffffff'],
+    glow: [220, 235, 255],
+  },
+  cyberpunk: {
+    moonRamp: ['#14002e', '#6a0dad', '#e0189a', '#00fff0'],
+    sunRamp: ['#4a0080', '#e0189a', '#ff6ec7', '#aef6ff'],
+    glow: [224, 24, 154],
+  },
+  violet: {
+    moonRamp: ['#2a1a5e', '#5e2bc8', '#9257f0', '#c9a8ff'],
+    sunRamp: ['#3a2373', '#7a4fd0', '#b28aff', '#e2d0ff'],
+    glow: [146, 87, 240],
+  },
+  red: {
+    moonRamp: ['#4a120c', '#8f2318', '#d1482e', '#ffb08a'],
+    sunRamp: ['#7a1f0f', '#c33a1a', '#f06a2e', '#ffd0a0'],
+    glow: [224, 83, 54],
+  },
+  green: {
+    moonRamp: ['#0e3324', '#166b47', '#2fa869', '#a8f0c8'],
+    sunRamp: ['#1a4d2e', '#2e8b57', '#4bc981', '#d0ffe0'],
+    glow: [63, 188, 122],
+  },
+  blue: {
+    moonRamp: ['#0f2a5e', '#1f5ec8', '#3f9af0', '#a8d8ff'],
+    sunRamp: ['#1a3a7a', '#2e6bc8', '#5a9af0', '#d0e8ff'],
+    glow: [63, 154, 240],
+  },
+  rose: {
+    moonRamp: ['#4a1330', '#a82660', '#e05a94', '#ffd0e0'],
+    sunRamp: ['#6b1a3a', '#d14a7e', '#ff8ab0', '#ffe4ee'],
+    glow: [240, 111, 168],
+  },
+};
+
 /* ================= flickering-grid background ================= */
 /* Fullscreen canvas take on Velora's flickering grid: a grid of squares
    fading in and out on staggered timers, plus pixel stars and a sun/moon
@@ -127,6 +179,7 @@ const bgApi = (function background() {
   let sunAt = DayCycle.sunPos(new Date());
   let moonAt = DayCycle.moonPos(new Date());
   let colorCache = [];
+  let themeKey = 'classic';
 
   const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
@@ -225,12 +278,13 @@ const bgApi = (function background() {
   }
 
   function buildCelestial() {
+    const th = THEMES[themeKey] || THEMES.classic;
     moon = {
-      img: pixelDisc(['#24348c', '#4160c8', '#7492f0', '#b3c6ff'], [[10, 9, 2.6], [20, 12, 2.2], [14, 19, 1.8], [22, 20, 1.4], [9, 15, 1.5], [18, 6, 1.3]]),
+      img: pixelDisc(th.moonRamp, [[10, 9, 2.6], [20, 12, 2.2], [14, 19, 1.8], [22, 20, 1.4], [9, 15, 1.5], [18, 6, 1.3]]),
       size: 22 * PITCH,
     };
     sun = {
-      img: pixelDisc(['#ff8f2e', '#ffb03a', '#ffd45e', '#fff2c8'], null),
+      img: pixelDisc(th.sunRamp, null),
       size: 20 * PITCH,
     };
   }
@@ -310,7 +364,7 @@ const bgApi = (function background() {
     } else if (pal.moon && moon) {
       const mx = Math.round(moonAt.x * W / PITCH) * PITCH;
       const my = Math.round(moonAt.y * H / PITCH) * PITCH;
-      drawGlow(mx, my, moon.size, [99, 132, 255], 0.12);
+      drawGlow(mx, my, moon.size, (THEMES[themeKey] || THEMES.classic).glow, 0.12);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(moon.img, mx - moon.size / 2, my - moon.size / 2, moon.size, moon.size);
     }
@@ -369,6 +423,12 @@ const bgApi = (function background() {
       buildColorCache();
       if (reduced) draw(0);
     },
+    setTheme(key) {
+      if (!THEMES[key]) return;
+      themeKey = key;
+      buildCelestial();
+      if (reduced) draw(0);
+    },
   };
 })();
 
@@ -404,12 +464,22 @@ const bgApi = (function background() {
     return null;
   }
 
+  function activeTheme() {
+    const t = loadStored('home:theme');
+    return THEMES[t] ? t : 'classic';
+  }
+
   function applyDayCycle() {
     const now = new Date();
     const forced = forcedPhase();
     const info = DayCycle.current(now, forced);
     if (document.body.dataset.phase !== info.name) {
       document.body.dataset.phase = info.name;
+    }
+    const theme = activeTheme();
+    if (document.body.dataset.theme !== theme) {
+      document.body.dataset.theme = theme;
+      bgApi.setTheme(theme);
     }
     bgApi.setPalette(DayCycle.palette(now, forced), DayCycle.sunPos(now, forced), DayCycle.moonPos(now, forced));
   }
@@ -456,6 +526,23 @@ const bgApi = (function background() {
     applyDayCycle();
   });
   renderPhaseOpts();
+
+  // celestial theme
+  const themeOpts = document.getElementById('theme-opts');
+  function renderThemeOpts() {
+    const cur = activeTheme();
+    for (const b of themeOpts.children) {
+      b.classList.toggle('active', b.dataset.theme === cur);
+    }
+  }
+  themeOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-theme]');
+    if (!b) return;
+    store('home:theme', b.dataset.theme);
+    renderThemeOpts();
+    applyDayCycle();
+  });
+  renderThemeOpts();
 
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);

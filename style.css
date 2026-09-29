@@ -104,6 +104,73 @@ body[data-phase="evening"] {
   --sel: rgba(255, 158, 107, 0.35);
 }
 
+/* celestial themes: recolor the accents + selection to match the planet
+   (declared after the phase blocks so the theme hue wins ties) */
+
+body[data-theme="dark"] {
+  --accent: #6d82ad;
+  --glow: rgba(90, 110, 160, 0.16);
+  --glow-strong: rgba(90, 110, 160, 0.30);
+  --sel: rgba(90, 111, 150, 0.35);
+  --border-strong: rgba(110, 132, 175, 0.45);
+}
+
+body[data-theme="bright"] {
+  --accent: #8aa4d9;
+  --glow: rgba(220, 235, 255, 0.22);
+  --glow-strong: rgba(220, 235, 255, 0.38);
+  --sel: rgba(176, 196, 234, 0.40);
+  --border-strong: rgba(140, 164, 217, 0.55);
+}
+
+body[data-theme="cyberpunk"] {
+  --accent: #e0189a;
+  --glow: rgba(224, 24, 154, 0.16);
+  --glow-strong: rgba(224, 24, 154, 0.30);
+  --sel: rgba(224, 24, 154, 0.35);
+  --border-strong: rgba(224, 24, 154, 0.50);
+}
+
+body[data-theme="violet"] {
+  --accent: #9257f0;
+  --glow: rgba(146, 87, 240, 0.16);
+  --glow-strong: rgba(146, 87, 240, 0.30);
+  --sel: rgba(146, 87, 240, 0.35);
+  --border-strong: rgba(146, 87, 240, 0.50);
+}
+
+body[data-theme="red"] {
+  --accent: #e05336;
+  --glow: rgba(224, 83, 54, 0.16);
+  --glow-strong: rgba(224, 83, 54, 0.30);
+  --sel: rgba(224, 83, 54, 0.35);
+  --border-strong: rgba(224, 83, 54, 0.50);
+}
+
+body[data-theme="green"] {
+  --accent: #2fa869;
+  --glow: rgba(63, 188, 122, 0.16);
+  --glow-strong: rgba(63, 188, 122, 0.30);
+  --sel: rgba(63, 188, 122, 0.35);
+  --border-strong: rgba(63, 188, 122, 0.50);
+}
+
+body[data-theme="blue"] {
+  --accent: #3f9af0;
+  --glow: rgba(63, 154, 240, 0.16);
+  --glow-strong: rgba(63, 154, 240, 0.30);
+  --sel: rgba(63, 154, 240, 0.35);
+  --border-strong: rgba(63, 154, 240, 0.50);
+}
+
+body[data-theme="rose"] {
+  --accent: #e05a94;
+  --glow: rgba(240, 111, 168, 0.16);
+  --glow-strong: rgba(240, 111, 168, 0.30);
+  --sel: rgba(240, 111, 168, 0.35);
+  --border-strong: rgba(240, 111, 168, 0.50);
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body { height: 100%; }

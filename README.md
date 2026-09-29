@@ -29,6 +29,10 @@ the pill text (anything you like — your name, a project, …) and **freeze** t
 day to Morning / Day / Evening / Night instead of following the clock. Both are stored
 in localStorage; pick **Auto** to return to the real clock.
 
+**Celestial themes:** in the same panel, pick a planet personality — Classic, Dark,
+Bright, **Cyberpunk**, Violet, Red (Mars), Green, Blue or Rose. The theme recolors the
+pixel planet/sun, its glow and the UI accents; the day/night cycle keeps running on top.
+
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
 It ships with a **Bus tracker** (live countdowns, simulated feed) and **Good vibes**
