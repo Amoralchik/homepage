@@ -31,10 +31,11 @@ in localStorage; pick **Auto** to return to the real clock.
 
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
-It ships with a **Bus tracker** (live countdowns, simulated feed) and remembers which
-widgets you added across sessions. The layer overlays the page without blocking the
-grid or the search box. New widgets are one registry entry away — see the
-`WIDGETS` object in `app.js`.
+It ships with a **Bus tracker** (live countdowns, simulated feed) and **Good vibes**
+(random little reminders — "be happy", "remember i love you", "stay safe" — that float
+across the screen every so often; click the card for a new one). The layer remembers
+which widgets you added across sessions. New widgets are one registry entry away — see
+the `WIDGETS` object in `app.js`.
 
 **Day/night cycle:** the whole page follows the local clock — sunny warm **morning**
 (06–11), clear blue **day** (11–17), dusky orange **evening** (17–21), and the starry

@@ -477,6 +477,83 @@ const bgApi = (function background() {
   // Add a widget by registering it here: mount(cardBody) draws the content
   // and may return a cleanup function; persistence is handled by the layer.
   const WIDGETS = {
+    vibes: {
+      name: 'Good vibes',
+      blurb: 'random little reminders',
+      mount(body) {
+        const MESSAGES = [
+          'be happy', 'good to see you', 'remember i love you', 'stay happy',
+          'be safe', "you've got this", 'proud of you', 'drink some water',
+          'take a deep breath', 'you are enough', 'stay cozy', 'shine on',
+          'one step at a time', 'smile — it looks good on you',
+        ];
+
+        const msg = document.createElement('div');
+        msg.className = 'wg-vibes-msg';
+        const hint = document.createElement('div');
+        hint.className = 'wg-vibes-hint';
+        hint.textContent = 'click for another';
+        const card = document.createElement('div');
+        card.className = 'wg-vibes';
+        card.appendChild(msg);
+        card.appendChild(hint);
+        card.title = 'Show another message';
+        body.appendChild(card);
+
+        const toasts = new Set();
+        const timers = [];
+        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        function pick() {
+          return MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+        }
+
+        function safeSpot() {
+          for (let i = 0; i < 12; i++) {
+            const fx = 0.06 + Math.random() * 0.88;
+            const fy = 0.10 + Math.random() * 0.72;
+            const inCenterX = fx > 0.22 && fx < 0.78;
+            const inCenterY = fy > 0.30 && fy < 0.68;
+            if (!(inCenterX && inCenterY)) return { x: fx * innerWidth, y: fy * innerHeight };
+          }
+          return { x: innerWidth * 0.12, y: innerHeight * 0.15 };
+        }
+
+        function spawn(custom) {
+          const text = custom || pick();
+          msg.textContent = text;
+          if (reduced) return;
+          const t = document.createElement('div');
+          t.className = 'vibe-toast';
+          t.textContent = '♥ ' + text;
+          const spot = safeSpot();
+          t.style.left = Math.round(spot.x) + 'px';
+          t.style.top = Math.round(spot.y) + 'px';
+          document.body.appendChild(t);
+          toasts.add(t);
+          requestAnimationFrame(() => t.classList.add('show'));
+          timers.push(setTimeout(() => {
+            t.classList.remove('show');
+            timers.push(setTimeout(() => { t.remove(); toasts.delete(t); }, 600));
+          }, 5200));
+        }
+
+        function loop() {
+          spawn();
+          timers.push(setTimeout(loop, 20000 + Math.random() * 25000));
+        }
+
+        card.addEventListener('click', () => spawn());
+        timers.push(setTimeout(loop, 6000)); // first one shows up shortly after load
+
+        return () => {
+          timers.forEach(clearTimeout);
+          toasts.forEach(t => t.remove());
+          toasts.clear();
+        };
+      },
+    },
+
     bus: {
       name: 'Bus tracker',
       blurb: 'Next arrivals, simulated feed',
