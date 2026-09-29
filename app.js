@@ -402,10 +402,12 @@ const bgApi = (function background() {
     }
 
     // sparkles on the water
-    for (const s of sparkles) {
-      const a = s.base + (1 - s.base) * Math.pow(Math.max(0, Math.sin(t / 1000 * s.w + s.ph)), 4);
-      ctx.fillStyle = rgba(pal.sparkle, a);
-      ctx.fillRect(s.x + half, s.y + half, SIZE, SIZE);
+    if (pal.sparklesOn !== false) {
+      for (const s of sparkles) {
+        const a = s.base + (1 - s.base) * Math.pow(Math.max(0, Math.sin(t / 1000 * s.w + s.ph)), 4);
+        ctx.fillStyle = rgba(pal.sparkle, a);
+        ctx.fillRect(s.x + half, s.y + half, SIZE, SIZE);
+      }
     }
 
     // sun by day, moon by night — both drift right → left with the clock
@@ -507,6 +509,7 @@ const bgApi = (function background() {
   /* ---------- day/night theming ---------- */
 
   const VALID_PHASES = ['morning', 'day', 'evening', 'night'];
+  const DEFAULT_SHOW = { celestial: true, stars: true, input: true, time: true, help: true };
 
   function forcedPhase() {
     // URL preview wins, then a phase frozen in settings, then the real clock
@@ -536,6 +539,10 @@ const bgApi = (function background() {
       bgApi.setTheme(theme);
     }
     const pal = tintPalette(DayCycle.palette(now, forced), theme);
+    const show = loadShow();
+    if (!show.celestial) { pal.sun = false; pal.moon = false; }
+    if (!show.stars) pal.starA = 0;
+    pal.sparklesOn = show.stars;
     bgApi.setPalette(pal, DayCycle.sunPos(now, forced), DayCycle.moonPos(now, forced));
   }
   applyDayCycle();
@@ -598,6 +605,42 @@ const bgApi = (function background() {
     applyDayCycle();
   });
   renderThemeOpts();
+
+  // show/hide toggles: planet, stars, input, time, help
+  const showOpts = document.getElementById('show-opts');
+
+  function loadShow() {
+    try {
+      const v = JSON.parse(loadStored('home:show'));
+      return v && typeof v === 'object' ? { ...DEFAULT_SHOW, ...v } : { ...DEFAULT_SHOW };
+    } catch (e) { return { ...DEFAULT_SHOW }; }
+  }
+
+  function applyShow(show) {
+    document.body.classList.toggle('no-input', !show.input);
+    document.body.classList.toggle('no-time', !show.time);
+    document.body.classList.toggle('no-help', !show.help);
+    applyDayCycle();
+  }
+
+  function renderShowOpts() {
+    const show = loadShow();
+    for (const b of showOpts.children) {
+      b.classList.toggle('active', !!show[b.dataset.show]);
+    }
+  }
+
+  showOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-show]');
+    if (!b) return;
+    const show = loadShow();
+    show[b.dataset.show] = !show[b.dataset.show];
+    store('home:show', JSON.stringify(show));
+    applyShow(show);
+    renderShowOpts();
+  });
+  renderShowOpts();
+  applyShow(loadShow());
 
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);
@@ -1166,13 +1209,15 @@ const bgApi = (function background() {
     }
   });
 
-  // global shortcuts: "/" or Ctrl/Cmd+K focuses the box (not while typing elsewhere)
+  // global shortcuts: "/" or Ctrl/Cmd+K focuses the box (not while typing
+  // elsewhere, and not when the input is hidden in settings)
   document.addEventListener('keydown', e => {
     const inField = document.activeElement instanceof HTMLInputElement;
-    if (e.key === '/' && document.activeElement !== input && !inField) {
+    const inputHidden = document.body.classList.contains('no-input');
+    if (e.key === '/' && document.activeElement !== input && !inField && !inputHidden) {
       e.preventDefault();
       input.focus();
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !inputHidden) {
       e.preventDefault();
       input.focus();
       input.select();

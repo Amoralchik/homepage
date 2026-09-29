@@ -220,6 +220,12 @@ body::before {
   width: min(720px, 92vw);
 }
 
+/* show/hide toggles from settings */
+
+body.no-input .center-wrap { display: none; }
+body.no-time .pill { display: none; }
+body.no-help .hint { display: none; }
+
 /* ---------- search box ---------- */
 
 .search {

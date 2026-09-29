@@ -34,6 +34,10 @@ Bright, **Cyberpunk**, Violet, Red (Mars), Green, Blue or Rose. The theme recolo
 pixel planet/sun, its glow, **the whole sky, grid and stars**, and the UI accents; the
 day/night cycle keeps running on top.
 
+**Show/hide:** the **Show** row toggles individual elements — the planet, the stars,
+the search input, the time pill, and the help dock — for a completely custom
+minimal (or maximal) layout. Toggles persist like everything else.
+
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
 It ships with a **Bus tracker** (live countdowns, simulated feed) and **Good vibes**
