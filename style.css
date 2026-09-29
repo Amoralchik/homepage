@@ -712,8 +712,8 @@ body::before {
 .wg-badge {
   flex: none;
   min-width: 26px;
+  padding: 4px 7px;
   text-align: center;
-  padding: 3px 0;
   border-radius: 6px;
   background: var(--chip-bg);
   color: var(--chip-fg);
