@@ -486,6 +486,8 @@ const bgApi = (function background() {
           'be safe', "you've got this", 'proud of you', 'drink some water',
           'take a deep breath', 'you are enough', 'stay cozy', 'shine on',
           'one step at a time', 'smile — it looks good on you',
+          'you built something beautiful today', 'the world is better with you in it',
+          'your future self is proud of you',
         ];
 
         const msg = document.createElement('div');
