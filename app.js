@@ -115,51 +115,105 @@ const DayCycle = (() => {
 
 const THEMES = {
   classic: {
+    hue: 0, sat: 1, lum: 1,
     moonRamp: ['#24348c', '#4160c8', '#7492f0', '#b3c6ff'],
     sunRamp: ['#ff8f2e', '#ffb03a', '#ffd45e', '#fff2c8'],
     glow: [99, 132, 255],
   },
   dark: {
+    hue: 0, sat: 0.45, lum: 0.72,
     moonRamp: ['#12182b', '#232f4d', '#37456b', '#4e5f8a'],
     sunRamp: ['#37456b', '#4e5f8a', '#6d82ad', '#93a6cc'],
     glow: [90, 110, 160],
   },
   bright: {
+    hue: 0, sat: 0.9, lum: 1.2,
     moonRamp: ['#8fa8d9', '#b0c4ea', '#d2e0fb', '#ffffff'],
     sunRamp: ['#ffd98a', '#ffe7ae', '#fff3d2', '#ffffff'],
     glow: [220, 235, 255],
   },
   cyberpunk: {
+    hue: 75, sat: 1.5, lum: 1.05,
     moonRamp: ['#14002e', '#6a0dad', '#e0189a', '#00fff0'],
     sunRamp: ['#4a0080', '#e0189a', '#ff6ec7', '#aef6ff'],
     glow: [224, 24, 154],
   },
   violet: {
+    hue: 50, sat: 1.25, lum: 1.02,
     moonRamp: ['#2a1a5e', '#5e2bc8', '#9257f0', '#c9a8ff'],
     sunRamp: ['#3a2373', '#7a4fd0', '#b28aff', '#e2d0ff'],
     glow: [146, 87, 240],
   },
   red: {
+    hue: 135, sat: 1.15, lum: 0.95,
     moonRamp: ['#4a120c', '#8f2318', '#d1482e', '#ffb08a'],
     sunRamp: ['#7a1f0f', '#c33a1a', '#f06a2e', '#ffd0a0'],
     glow: [224, 83, 54],
   },
   green: {
+    hue: 265, sat: 1.1, lum: 1.0,
     moonRamp: ['#0e3324', '#166b47', '#2fa869', '#a8f0c8'],
     sunRamp: ['#1a4d2e', '#2e8b57', '#4bc981', '#d0ffe0'],
     glow: [63, 188, 122],
   },
   blue: {
+    hue: 25, sat: 1.3, lum: 1.05,
     moonRamp: ['#0f2a5e', '#1f5ec8', '#3f9af0', '#a8d8ff'],
     sunRamp: ['#1a3a7a', '#2e6bc8', '#5a9af0', '#d0e8ff'],
     glow: [63, 154, 240],
   },
   rose: {
+    hue: 105, sat: 1.2, lum: 1.06,
     moonRamp: ['#4a1330', '#a82660', '#e05a94', '#ffd0e0'],
     sunRamp: ['#6b1a3a', '#d14a7e', '#ff8ab0', '#ffe4ee'],
     glow: [240, 111, 168],
   },
 };
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d > 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) * 60; break;
+      case g: h = ((b - r) / d + 2) * 60; break;
+      default: h = ((r - g) / d + 4) * 60;
+    }
+  }
+  return [h, s * 100, l * 100];
+}
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+
+// shifts a [r,g,b] color by the theme's hue/saturation/lightness transform
+function tintRGB(c, t) {
+  const [h, s, l] = rgbToHsl(c[0], c[1], c[2]);
+  const nh = (h + t.hue + 360) % 360;
+  const ns = Math.max(0, Math.min(100, s * t.sat));
+  const nl = Math.max(0, Math.min(100, l * t.lum));
+  return hslToRgb(nh, ns, nl);
+}
+
+// applies the theme transform to a whole phase palette
+function tintPalette(pal, themeKey) {
+  const t = THEMES[themeKey] || THEMES.classic;
+  const out = { ...pal };
+  for (const key of ['skyTop', 'skyBot', 'gridDim', 'gridBright', 'sparkle', 'sunGlow']) {
+    out[key] = tintRGB(pal[key], t);
+  }
+  out.star = tintRGB([150, 175, 255], t);
+  return out;
+}
 
 /* ================= flickering-grid background ================= */
 /* Fullscreen canvas take on Velora's flickering grid: a grid of squares
@@ -335,7 +389,7 @@ const bgApi = (function background() {
     if (pal.starA > 0.01) {
       for (const s of stars) {
         const a = (s.base + (1 - s.base) * Math.pow(Math.max(0, Math.sin(t / 1000 * s.w + s.ph)), 3)) * pal.starA;
-        ctx.fillStyle = `rgba(150,175,255,${a.toFixed(3)})`;
+        ctx.fillStyle = rgba(pal.star, +a.toFixed(3));
         if (s.plus) {
           for (let k = -s.s; k <= s.s; k++) {
             ctx.fillRect(s.x + half, s.y + k * PITCH + half, SIZE, SIZE);
@@ -472,16 +526,17 @@ const bgApi = (function background() {
   function applyDayCycle() {
     const now = new Date();
     const forced = forcedPhase();
+    const theme = activeTheme();
     const info = DayCycle.current(now, forced);
     if (document.body.dataset.phase !== info.name) {
       document.body.dataset.phase = info.name;
     }
-    const theme = activeTheme();
     if (document.body.dataset.theme !== theme) {
       document.body.dataset.theme = theme;
       bgApi.setTheme(theme);
     }
-    bgApi.setPalette(DayCycle.palette(now, forced), DayCycle.sunPos(now, forced), DayCycle.moonPos(now, forced));
+    const pal = tintPalette(DayCycle.palette(now, forced), theme);
+    bgApi.setPalette(pal, DayCycle.sunPos(now, forced), DayCycle.moonPos(now, forced));
   }
   applyDayCycle();
   setInterval(applyDayCycle, 30 * 1000);
