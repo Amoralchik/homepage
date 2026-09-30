@@ -12,6 +12,9 @@ that arcs with the clock, and a centered search box with a **provider dropdown**
 
 Providers: **Google · DuckDuckGo · Perplexity**
 The choice is remembered (localStorage). `Enter` searches, `/` or `Ctrl+K` focuses the box.
+While the search box is empty, the placeholder cycles through hint phrases
+(Velora "Vanish Input" style — it hides while you type and stays static under
+`prefers-reduced-motion`); the phrases live in the `PLACEHOLDERS` array in `app.js`.
 
 **Autocomplete:** suggestions drop down as you type (2+ characters), Google-style with
 keyboard navigation — `↑`/`↓` to pick (the input echoes the highlighted suggestion),
