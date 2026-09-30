@@ -3,5 +3,5 @@ __pycache__/
 Thumbs.db
 .DS_Store
 .zcodeignore
-.zcodeignore
 mods.js
+.env

@@ -136,10 +136,12 @@ HOME_MODS.register('my-widget', {
 ```
 
 A practical example ships as the default content: a **De Lijn bus tracker** for a
-specific stop that counts down an editable departure timetable and pops a small
-bottom-center alert when the next bus is within 30 minutes — with a marked hook to
-switch to the official live API using a free [developer.delijn.be](https://developer.delijn.be)
-key (the extension manifest already whitelists `api.delijn.be`).
+specific stop with **live real-time arrivals** — it polls the official
+[De Lijn Open Data API](https://data.delijn.be) (free key from
+[developer.delijn.be](https://developer.delijn.be), stored in the gitignored
+`mods.js`/`.env`), shows a green LIVE tag on real-time passages, and pops a small
+bottom-center alert when the next bus is within 30 minutes. If the API is
+unreachable it automatically falls back to an editable departure timetable.
 
 ## Contributing
 
