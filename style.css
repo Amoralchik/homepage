@@ -266,6 +266,21 @@ body.no-help .hint { display: none; }
 
 #query::placeholder { color: var(--text-3); }
 
+/* vanishing placeholder overlay (cycles while the field is empty) */
+
+.vanish-ph {
+  position: absolute;
+  left: 22px;
+  top: 20px;
+  max-width: calc(100% - 44px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font: 500 17px/1.4 "Inter", system-ui, sans-serif;
+  pointer-events: none;
+}
+
 .search-row {
   display: flex;
   align-items: center;

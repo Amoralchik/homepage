@@ -1229,6 +1229,59 @@ const bgApi = (function background() {
 
   document.getElementById('submit').addEventListener('click', submit);
 
+  /* ---------- vanishing placeholder ---------- */
+
+  const PLACEHOLDERS = [
+    'Search the web…',
+    "Try 'weather tomorrow'",
+    'Paste a link — Enter opens it',
+    'Ask Perplexity anything…',
+    "Type 'github.com' and hit Enter",
+    'Search privately with DuckDuckGo',
+  ];
+  const phEl = document.getElementById('vanish-ph');
+  let phIdx = 0, phBusy = false;
+  const phReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function phApply() {
+    phEl.textContent = PLACEHOLDERS[phIdx];
+  }
+
+  function updatePhVisibility() {
+    const empty = input.value === '';
+    if (empty) phApply();
+    phEl.style.opacity = empty ? '1' : '0';
+  }
+
+  function phNext() {
+    if (phBusy) return;
+    phBusy = true;
+    const out = phEl.animate(
+      [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-10px)' }],
+      { duration: 240, easing: 'ease-in' }
+    );
+    out.onfinish = () => {
+      phIdx = (phIdx + 1) % PLACEHOLDERS.length;
+      phApply();
+      const inn = phEl.animate(
+        [{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 260, easing: 'ease-out' }
+      );
+      inn.onfinish = () => { phBusy = false; };
+    };
+  }
+
+  function phTick() {
+    if (input.value === '' && !phBusy) phNext();
+    setTimeout(phTick, 3000);
+  }
+
+  // the animated overlay takes over from the static placeholder attribute
+  input.placeholder = '';
+  phApply();
+  phEl.style.opacity = '1';
+  if (!phReduced) setTimeout(phTick, 3000);
+
   /* ---------- autocomplete ---------- */
 
   const SUGGEST_MAX = 8;
@@ -1428,6 +1481,7 @@ const bgApi = (function background() {
   }
 
   input.addEventListener('input', () => {
+    updatePhVisibility();
     clearTimeout(suggestTimer);
     const q = input.value.trim();
     if (q.length < 2) { closeSuggestions(); return; }
@@ -1453,7 +1507,8 @@ const bgApi = (function background() {
     if (e.key === 'Enter') submit();
     if (e.key === 'Escape') {
       if (isOpen()) close();
-      else if (input.value) { input.value = ''; closeSuggestions(); }
+      else if (suggestOpenState()) closeSuggestions();
+      else if (input.value) { input.value = ''; closeSuggestions(); updatePhVisibility(); }
       else input.blur();
     }
   });
