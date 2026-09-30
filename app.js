@@ -236,6 +236,7 @@ const bgApi = (function background() {
   let themeKey = 'classic';
   let bgMode = 'scene';
   let modeState = {};
+  let wallpaperImg = null;
 
   const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
@@ -444,6 +445,8 @@ const bgApi = (function background() {
       case 'particles': return drawParticles(t, dt);
       case 'retro': return drawRetro(t);
       case 'shooting': return drawShooting(t, dt);
+      case 'grain': return drawGrain(t, dt);
+      case 'halftone': return drawHalftone(t);
     }
   }
 
@@ -607,8 +610,108 @@ const bgApi = (function background() {
     if (m.life <= 0 || m.y > H + 40 || m.x < -60 || m.x > W + 60) modeState.meteor = null;
   }
 
+  function drawGrain(t, dt) {
+    // vivid drifting blobs, like a living gradient wallpaper
+    if (modeState.grainFor !== themeKey) {
+      modeState.grainFor = themeKey;
+      modeState.grainCols = [
+        tintRGB([255, 110, 170], THEMES[themeKey]),
+        tintRGB([110, 150, 255], THEMES[themeKey]),
+        tintRGB([255, 200, 110], THEMES[themeKey]),
+        tintRGB([120, 230, 200], THEMES[themeKey]),
+      ];
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    modeState.grainCols.forEach((c, i) => {
+      const ph = i * 1.7;
+      const x = W * (0.2 + 0.2 * i) + Math.sin(t / 7000 + ph) * W * 0.16;
+      const y = H * (0.3 + 0.1 * Math.sin(t / 5200 + ph * 1.4));
+      const r = Math.min(W, H) * (0.38 + 0.08 * Math.sin(t / 4500 + ph));
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(c, 0.30));
+      g.addColorStop(1, rgba(c, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    });
+    ctx.globalCompositeOperation = 'source-over';
+    // film grain
+    const n = modeState.noise;
+    if (!n) return;
+    const ox = reduced ? 0 : Math.floor(Math.random() * n.width);
+    const oy = reduced ? 0 : Math.floor(Math.random() * n.height);
+    ctx.globalAlpha = 0.55;
+    for (let x = -n.width; x < W + n.width; x += n.width) {
+      for (let y = -n.height; y < H + n.height; y += n.height) {
+        ctx.drawImage(n, x - ox, y - oy);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawHalftone() {
+    const sample = modeState.halftone;
+    if (!sample) return;
+    const cell = 14;
+    // bright dots mixed with the theme accent so they read on any sky
+    const base = [0, 1, 2].map(i => Math.round(pal.star[i] * 0.45 + 255 * 0.55));
+    const warm = pal.sunGlow;
+    for (let gy = 0; gy < sample.rows; gy++) {
+      for (let gx = 0; gx < sample.cols; gx++) {
+        const lum = sample.data[gy * sample.cols + gx];
+        if (lum < 0.03) continue;
+        const r = cell * 0.46 * (0.25 + lum * 0.75);
+        const cx = gx * cell + cell / 2;
+        const cy = gy * cell + cell / 2;
+        const mixX = gx / sample.cols;
+        const col = [0, 1, 2].map(i => Math.round(base[i] + (warm[i] - base[i]) * mixX));
+        ctx.fillStyle = rgba(col, +(0.35 + lum * 0.55).toFixed(3));
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function buildHalftoneSample() {
+    const src = wallpaperImg;
+    const cols = Math.ceil(W / 14) + 1;
+    const rows = Math.ceil(H / 14) + 1;
+    const off = document.createElement('canvas');
+    off.width = cols;
+    off.height = rows;
+    const oc = off.getContext('2d');
+    if (src && src.width) {
+      const scale = Math.max(cols / src.width, rows / src.height);
+      const dw = src.width * scale;
+      const dh = src.height * scale;
+      oc.drawImage(src, (cols - dw) / 2, (rows - dh) / 2, dw, dh);
+    } else {
+      // no wallpaper yet: a dark procedural scene so the dots glow sparsely
+      oc.fillStyle = '#04070f';
+      oc.fillRect(0, 0, cols, rows);
+      const band = oc.createLinearGradient(0, rows * 0.55, 0, rows);
+      band.addColorStop(0, 'rgba(255,255,255,0)');
+      band.addColorStop(1, 'rgba(255,220,180,0.85)');
+      oc.fillStyle = band;
+      oc.fillRect(0, rows * 0.55, cols, rows * 0.45);
+      const glow = oc.createRadialGradient(cols * 0.72, rows * 0.2, 1, cols * 0.72, rows * 0.2, cols * 0.3);
+      glow.addColorStop(0, 'rgba(255,255,255,0.95)');
+      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      oc.fillStyle = glow;
+      oc.fillRect(0, 0, cols, rows);
+    }
+    const d = oc.getImageData(0, 0, cols, rows).data;
+    const data = new Float32Array(cols * rows);
+    for (let i = 0; i < cols * rows; i++) {
+      const lum = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+      data[i] = Math.max(0, Math.min(1, (lum - 0.02) / 0.95));
+    }
+    modeState.halftone = { data, cols, rows };
+  }
+
   function buildModeExtras() {
     modeState = { meteor: null };
+    if (bgMode === 'halftone') buildHalftoneSample();
     if (bgMode === 'shooting') {
       modeState.shootStars = Array.from({ length: 150 }, () => ({
         x: Math.random() * W,
@@ -629,7 +732,7 @@ const bgApi = (function background() {
         a: 0.25 + Math.random() * 0.5,
       }));
     }
-    if (bgMode === 'noise') {
+    if (bgMode === 'grain' || bgMode === 'noise') {
       const n = document.createElement('canvas');
       n.width = n.height = 200;
       const nc = n.getContext('2d');
@@ -703,12 +806,19 @@ const bgApi = (function background() {
       if (!THEMES[key]) return;
       themeKey = key;
       buildCelestial();
+      modeState.grainFor = null;
+      modeState.auroraFor = null;
       if (reduced) draw(0);
     },
     setMode(mode) {
       if (mode === bgMode) return;
       bgMode = mode;
       buildModeExtras();
+      if (reduced) draw(0);
+    },
+    setWallpaper(img) {
+      wallpaperImg = img;
+      if (bgMode === 'halftone') buildHalftoneSample();
       if (reduced) draw(0);
     },
   };
@@ -735,7 +845,7 @@ const bgApi = (function background() {
   /* ---------- day/night theming ---------- */
 
   const VALID_PHASES = ['morning', 'day', 'evening', 'night'];
-  const DEFAULT_SHOW = { celestial: true, stars: true, input: true, time: true, help: true };
+  const DEFAULT_SHOW = { celestial: true, stars: true, input: true, time: true, help: true, pulse: true };
 
   function forcedPhase() {
     // URL preview wins, then a phase frozen in settings, then the real clock
@@ -846,6 +956,7 @@ const bgApi = (function background() {
     document.body.classList.toggle('no-input', !show.input);
     document.body.classList.toggle('no-time', !show.time);
     document.body.classList.toggle('no-help', !show.help);
+    document.body.classList.toggle('no-pulse', !show.pulse);
     applyDayCycle();
   }
 
@@ -870,7 +981,7 @@ const bgApi = (function background() {
 
   // background style
   const bgOpts = document.getElementById('bg-opts');
-  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting'];
+  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone'];
   function currentBg() {
     const b = loadStored('home:bg');
     return VALID_BGS.includes(b) ? b : 'scene';
@@ -890,6 +1001,64 @@ const bgApi = (function background() {
   });
   renderBgOpts();
   bgApi.setMode(currentBg());
+
+  // wallpaper for the halftone background (stored locally in IndexedDB)
+  const wallSet = document.getElementById('wall-set');
+  const wallClear = document.getElementById('wall-clear');
+  const wallInput = document.getElementById('wall-input');
+
+  function idbOpen() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('homepage', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('kv');
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+  async function idbSet(key, val) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('kv', 'readwrite');
+      if (val === null) tx.objectStore('kv').delete(key);
+      else tx.objectStore('kv').put(val, key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function idbGet(key) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('kv', 'readonly');
+      const req = tx.objectStore('kv').get(key);
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  function applyWallpaper(dataUrl) {
+    if (!dataUrl) { bgApi.setWallpaper(null); return; }
+    const img = new Image();
+    img.onload = () => bgApi.setWallpaper(img);
+    img.src = dataUrl;
+  }
+
+  wallSet.addEventListener('click', () => wallInput.click());
+  wallInput.addEventListener('change', () => {
+    const file = wallInput.files && wallInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      await idbSet('wallpaper', reader.result);
+      applyWallpaper(reader.result);
+    };
+    reader.readAsDataURL(file);
+    wallInput.value = '';
+  });
+  wallClear.addEventListener('click', async () => {
+    await idbSet('wallpaper', null);
+    bgApi.setWallpaper(null);
+  });
+  idbGet('wallpaper').then(applyWallpaper).catch(() => { });
 
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);

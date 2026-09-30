@@ -41,9 +41,14 @@ in localStorage; pick **Auto** to return to the real clock.
 **Backgrounds:** the **Bg** row in settings switches the whole background style —
 **Scene** (the default pixel world), **Aurora** (drifting light blobs), **Grid**
 (clean graph paper), **Lamp** (warm light cone), **Noise** (film grain), **Particles**
-(floating dust), **Retro** (synthwave perspective floor) and **Shooting** (dense
-starfield with occasional meteors). Every background is theme- and phase-aware, so
+(floating dust), **Retro** (synthwave perspective floor), **Shooting** (dense
+starfield with occasional meteors), **Grain** (vivid gradient with film grain) and
+**Halftone** (dot-matrix rendering). Every background is theme- and phase-aware, so
 Cyberpunk-Retro or Rose-Aurora look exactly like you'd hope.
+
+**Wallpaper:** the **Wall** row lets you pick an image (stored locally in
+IndexedDB, never synced anywhere) and **Halftone** renders it as glowing
+dot-matrix art — bright areas become big glowing dots, dark areas fall silent.
 
 **Celestial themes:** in the same panel, pick a planet personality — Classic, Dark,
 Bright, **Cyberpunk**, Violet, Red (Mars), Green, Blue or Rose. The theme recolors the
@@ -51,8 +56,9 @@ pixel planet/sun, its glow, **the whole sky, grid and stars**, and the UI accent
 day/night cycle keeps running on top.
 
 **Show/hide:** the **Show** row toggles individual elements — the planet, the stars,
-the search input, the time pill, and the help dock — for a completely custom
-minimal (or maximal) layout. Toggles persist like everything else.
+the search input, the time pill, the help dock, and the **pulsing border** on the
+search box — for a completely custom minimal (or maximal) layout. Toggles persist
+like everything else.
 
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.

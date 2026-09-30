@@ -283,6 +283,72 @@ body.no-input .center-wrap { display: none; }
 body.no-time .pill { display: none; }
 body.no-help .hint { display: none; }
 
+/* pulsing border on the search box (theme-colored, rotating gradient) */
+
+@property --pulse-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes pulse-spin {
+  to { --pulse-angle: 360deg; }
+}
+
+@keyframes pulse-breathe {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+.search::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 20px;
+  background: conic-gradient(
+    from var(--pulse-angle),
+    var(--accent),
+    transparent 22%,
+    var(--accent) 42%,
+    transparent 65%,
+    var(--accent)
+  );
+  filter: blur(7px);
+  opacity: 0.7;
+  z-index: -1;
+  animation:
+    pulse-spin 4s linear infinite,
+    pulse-breathe 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.search::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 19px;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--pulse-angle),
+    var(--accent),
+    transparent 25%,
+    var(--accent) 50%,
+    transparent 75%,
+    var(--accent)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: pulse-spin 4s linear infinite;
+  pointer-events: none;
+}
+
+body.no-pulse .search::before,
+body.no-pulse .search::after {
+  display: none;
+}
+
 /* ---------- search box ---------- */
 
 .search {
@@ -988,4 +1054,5 @@ body.no-help .hint { display: none; }
   .search, .pill { animation: none; }
   .menu, .chev, .submit { transition: none; }
   .live-dot { animation: none; }
+  .search::before, .search::after { animation: none; }
 }
