@@ -431,6 +431,22 @@ body.no-help .hint { display: none; }
   text-transform: uppercase;
 }
 
+.open-tag.flashed {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--chip-bg);
+}
+
+.suggest-item.calc-row .done {
+  font: 400 10px/1.2 "Silkscreen", "Courier New", monospace;
+  letter-spacing: 0.04em;
+}
+
+.suggest-item .calc-sym {
+  font: 400 11px/1 "Silkscreen", "Courier New", monospace;
+  color: var(--accent);
+}
+
 /* submit button */
 
 .submit {

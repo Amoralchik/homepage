@@ -1219,11 +1219,28 @@ const bgApi = (function background() {
   document.addEventListener('click', e => { if (!wrap.contains(e.target)) close(); });
 
   function submit() {
-    closeSuggestions();
     const q = input.value.trim();
     if (!q) { input.focus(); return; }
-    // omnibox behavior: a URL goes straight to the site, anything else searches
-    if (looksLikeUrl(q)) { location.href = normalizeUrl(q); return; }
+    // omnibox: URL opens directly…
+    if (looksLikeUrl(q)) {
+      closeSuggestions();
+      location.href = normalizeUrl(q);
+      return;
+    }
+    // …and a pure math expression shows its result card, copied for you
+    const c = tryCalc(q);
+    if (c) {
+      suggestQuery = q;
+      suggestItems = [];
+      urlEntry = null;
+      calcEntry = c;
+      suggestActive = -1;
+      searchEl.classList.add('suggest-open');
+      renderSuggestions();
+      copyCalc();
+      return;
+    }
+    closeSuggestions();
     location.href = provider.url + encodeURIComponent(q);
   }
 
@@ -1300,7 +1317,23 @@ const bgApi = (function background() {
     return /^https?:\/\//i.test(s) ? s : 'https://' + s;
   }
 
-  let suggestItems = [], urlEntry = null, suggestActive = -1, suggestQuery = '', suggestReqId = 0, suggestTimer = 0;
+  // safe math evaluator for the calculator row: digits and math tokens only
+  function tryCalc(q) {
+    let s = q.split('=')[0].trim().replace(/×/g, '*').replace(/÷/g, '/').replace(/,/g, '');
+    if (!s || s.length > 60) return null;
+    if (!/^[0-9+\-*/(). ^%\ssqrtpi]+$/i.test(s)) return null; // math chars only
+    if (!/\d/.test(s)) return null;
+    if (!/[+*/^%-]/.test(s) && !/^sqrt/i.test(s)) return null; // needs an operator
+    const js = s.replace(/\^/g, '**').replace(/sqrt/ig, 'Math.sqrt').replace(/\bpi\b/ig, 'Math.PI');
+    if (!/^(?:Math\.(?:sqrt|PI)|[\d+\-*/().\s])+$/.test(js)) return null;
+    try {
+      const v = Function('"use strict"; return (' + js + ')')();
+      if (typeof v !== 'number' || !isFinite(v)) return null;
+      return { expr: s, value: Math.round(v * 1e10) / 1e10 };
+    } catch (e) { return null; }
+  }
+
+  let suggestItems = [], urlEntry = null, calcEntry = null, suggestActive = -1, suggestQuery = '', suggestReqId = 0, suggestTimer = 0;
   const suggestCache = new Map();
 
   const suggestOpenState = () => searchEl.classList.contains('suggest-open');
@@ -1311,6 +1344,7 @@ const bgApi = (function background() {
     suggestEl.innerHTML = '';
     suggestItems = [];
     urlEntry = null;
+    calcEntry = null;
     suggestActive = -1;
   }
 
@@ -1348,9 +1382,10 @@ const bgApi = (function background() {
       if (input.value.trim().toLowerCase() !== qq.toLowerCase()) return;
       suggestQuery = qq;
       suggestItems = list;
+      calcEntry = tryCalc(qq);
       urlEntry = looksLikeUrl(qq) ? normalizeUrl(qq) : null;
       suggestActive = -1;
-      if (list.length || urlEntry) {
+      if (list.length || urlEntry || calcEntry) {
         searchEl.classList.add('suggest-open');
         renderSuggestions();
       } else {
@@ -1396,6 +1431,7 @@ const bgApi = (function background() {
     suggestEl.innerHTML = '';
     const q = suggestQuery.toLowerCase();
     const rows = [];
+    if (calcEntry) rows.push({ type: 'calc', text: `${calcEntry.expr} = ${calcEntry.value}` });
     if (urlEntry) rows.push({ type: 'url', text: urlEntry });
     for (const s of suggestItems) rows.push({ type: 'sug', text: s });
 
@@ -1404,7 +1440,18 @@ const bgApi = (function background() {
       item.className = 'suggest-item';
       item.setAttribute('role', 'option');
 
-      if (row.type === 'url') {
+      if (row.type === 'calc') {
+        item.classList.add('calc-row');
+        item.innerHTML = '<span class="mag calc-sym">=</span>';
+        const text = document.createElement('span');
+        text.className = 'done';
+        text.textContent = row.text;
+        item.appendChild(text);
+        const tag = document.createElement('span');
+        tag.className = 'open-tag copy-tag';
+        tag.textContent = 'copy';
+        item.appendChild(tag);
+      } else if (row.type === 'url') {
         item.classList.add('url-row');
         item.innerHTML = GLOBE;
         const text = document.createElement('span');
@@ -1436,15 +1483,18 @@ const bgApi = (function background() {
 
       item.addEventListener('mousedown', e => e.preventDefault()); // keep input focus
       item.addEventListener('mouseenter', () => { suggestActive = i; renderActive(); });
-      item.addEventListener('click', () => (row.type === 'url' ? openUrl() : chooseSuggestion(row.text)));
+      if (row.type === 'calc') item.addEventListener('click', () => copyCalc());
+      else if (row.type === 'url') item.addEventListener('click', () => openUrl());
+      else item.addEventListener('click', () => chooseSuggestion(row.text));
       suggestEl.appendChild(item);
     });
   }
 
   function allRows() {
     const rows = [];
-    if (urlEntry) rows.push(urlEntry);
-    rows.push(...suggestItems);
+    if (calcEntry) rows.push({ type: 'calc' });
+    if (urlEntry) rows.push({ type: 'url' });
+    for (const s of suggestItems) rows.push({ type: 'sug', text: s });
     return rows;
   }
 
@@ -1460,7 +1510,11 @@ const bgApi = (function background() {
     if (!n) return;
     if (dir > 0) suggestActive = suggestActive >= n - 1 ? -1 : suggestActive + 1;
     else suggestActive = suggestActive <= -1 ? n - 1 : suggestActive - 1;
-    input.value = suggestActive >= 0 ? allRows()[suggestActive] : suggestQuery;
+    const sugIdx = suggestActive - (calcEntry ? 1 : 0) - (urlEntry ? 1 : 0);
+    if (suggestActive < 0) input.value = suggestQuery;
+    else if (calcEntry && suggestActive === 0) input.value = calcEntry.expr + ' = ' + calcEntry.value;
+    else if (urlEntry && suggestActive === (calcEntry ? 1 : 0)) input.value = urlEntry;
+    else if (suggestItems[sugIdx] !== undefined) input.value = suggestItems[sugIdx];
     const len = input.value.length;
     input.setSelectionRange(len, len);
     renderActive();
@@ -1480,11 +1534,50 @@ const bgApi = (function background() {
     submit();
   }
 
+  function copyCalc() {
+    copyText(String(calcEntry.value), () => {
+      const tag = suggestEl.querySelector('.calc-row .copy-tag');
+      if (!tag) return;
+      tag.textContent = 'copied ✓';
+      tag.classList.add('flashed');
+      setTimeout(() => {
+        tag.textContent = 'copy';
+        tag.classList.remove('flashed');
+      }, 1400);
+    });
+  }
+
+  function copyText(text, onDone) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onDone, onDone);
+      return;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { }
+    ta.remove();
+    onDone();
+  }
+
   input.addEventListener('input', () => {
     updatePhVisibility();
     clearTimeout(suggestTimer);
     const q = input.value.trim();
     if (q.length < 2) { closeSuggestions(); return; }
+    // instant local rows — the calculator and URL opening need no network
+    suggestQuery = q;
+    suggestItems = [];
+    calcEntry = tryCalc(q);
+    urlEntry = looksLikeUrl(q) ? normalizeUrl(q) : null;
+    suggestActive = -1;
+    if (calcEntry || urlEntry) {
+      searchEl.classList.add('suggest-open');
+      renderSuggestions();
+    }
     suggestTimer = setTimeout(() => requestSuggestions(q), 130);
   });
 
@@ -1498,8 +1591,12 @@ const bgApi = (function background() {
       if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); return; }
       if (e.key === 'Enter' && suggestActive >= 0) {
         e.preventDefault();
-        if (urlEntry && suggestActive === 0) openUrl();
-        else chooseSuggestion(suggestItems[suggestActive - (urlEntry ? 1 : 0)]);
+        if (calcEntry && suggestActive === 0) copyCalc();
+        else if (urlEntry && suggestActive === (calcEntry ? 1 : 0)) openUrl();
+        else {
+          const s = suggestItems[suggestActive - (calcEntry ? 1 : 0) - (urlEntry ? 1 : 0)];
+          if (s) chooseSuggestion(s);
+        }
         return;
       }
       if (e.key === 'Escape') { closeSuggestions(); return; }

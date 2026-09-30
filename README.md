@@ -27,6 +27,12 @@ works normally.
 `localhost:3000` — and a globe row with an `OPEN LINK` tag appears above the suggestions;
 `Enter` opens the site directly (`https://` is added for you). Plain text just searches.
 
+**Instant calculator:** type a math expression — `4+4`, `12*7`, `sqrt(16)`, `(2+3)*4`,
+`2^10` — and a special card shows the result with a **COPY** tag: `Enter` (or clicking
+the card) copies the answer to your clipboard. Suffix `=` is allowed (`4+4=`), as are
+`sqrt`, `pi`, `×` and `÷`. Pick a search suggestion instead if you actually wanted to
+search the expression.
+
 **Settings:** the gear in the bottom-right corner opens a small panel where you can set
 the pill text (anything you like — your name, a project, …) and **freeze** the time of
 day to Morning / Day / Evening / Night instead of following the clock. Both are stored
