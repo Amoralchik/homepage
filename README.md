@@ -29,6 +29,13 @@ the pill text (anything you like — your name, a project, …) and **freeze** t
 day to Morning / Day / Evening / Night instead of following the clock. Both are stored
 in localStorage; pick **Auto** to return to the real clock.
 
+**Backgrounds:** the **Bg** row in settings switches the whole background style —
+**Scene** (the default pixel world), **Aurora** (drifting light blobs), **Grid**
+(clean graph paper), **Lamp** (warm light cone), **Noise** (film grain), **Particles**
+(floating dust), **Retro** (synthwave perspective floor) and **Shooting** (dense
+starfield with occasional meteors). Every background is theme- and phase-aware, so
+Cyberpunk-Retro or Rose-Aurora look exactly like you'd hope.
+
 **Celestial themes:** in the same panel, pick a planet personality — Classic, Dark,
 Bright, **Cyberpunk**, Violet, Red (Mars), Green, Blue or Rose. The theme recolors the
 pixel planet/sun, its glow, **the whole sky, grid and stars**, and the UI accents; the

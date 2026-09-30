@@ -234,6 +234,8 @@ const bgApi = (function background() {
   let moonAt = DayCycle.moonPos(new Date());
   let colorCache = [];
   let themeKey = 'classic';
+  let bgMode = 'scene';
+  let modeState = {};
 
   const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
@@ -365,14 +367,19 @@ const bgApi = (function background() {
     }
   }
 
-  function draw(t) {
-    // sky gradient
+  function draw(t, dt = 16) {
+    // base sky for every mode
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, rgba(pal.skyTop));
     g.addColorStop(1, rgba(pal.skyBot));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
+    if (bgMode === 'scene') drawScene(t);
+    else drawAltMode(t, dt);
+  }
+
+  function drawScene(t) {
     // grid squares
     const half = (PITCH - SIZE) / 2;
     for (let r = 0; r < rows; r++) {
@@ -426,12 +433,224 @@ const bgApi = (function background() {
     }
   }
 
+  /* ---------- alternative backgrounds (Velora-inspired) ---------- */
+
+  function drawAltMode(t, dt) {
+    switch (bgMode) {
+      case 'aurora': return drawAurora(t);
+      case 'grid': return drawGridPattern();
+      case 'lamp': return drawLamp(t);
+      case 'noise': return drawNoise(t);
+      case 'particles': return drawParticles(t, dt);
+      case 'retro': return drawRetro(t);
+      case 'shooting': return drawShooting(t, dt);
+    }
+  }
+
+  function drawStarsFaint(t, factor) {
+    if (pal.starA <= 0.01) return;
+    const half = (PITCH - SIZE) / 2;
+    for (const s of stars) {
+      const a = (s.base + (1 - s.base) * Math.pow(Math.max(0, Math.sin(t / 1000 * s.w + s.ph)), 3)) * pal.starA * factor;
+      ctx.fillStyle = rgba(pal.star, +a.toFixed(3));
+      ctx.fillRect(s.x + half, s.y + half, SIZE, SIZE);
+    }
+  }
+
+  function drawAurora(t) {
+    drawStarsFaint(t, 0.6);
+    // one aurora color set per theme, cached until the theme changes
+    if (modeState.auroraFor !== themeKey) {
+      modeState.auroraFor = themeKey;
+      modeState.auroraCols = [
+        tintRGB([64, 224, 160], THEMES[themeKey]),
+        tintRGB([120, 96, 255], THEMES[themeKey]),
+        tintRGB([36, 160, 255], THEMES[themeKey]),
+      ];
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    modeState.auroraCols.forEach((c, i) => {
+      const ph = i * 2.1;
+      const x = W * (0.25 + 0.25 * i) + Math.sin(t / 9000 + ph) * W * 0.12;
+      const y = H * (0.30 + 0.08 * Math.sin(t / 7000 + ph * 1.7));
+      const r = Math.min(W, H) * (0.42 + 0.06 * Math.sin(t / 6000 + ph));
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(c, 0.15));
+      g.addColorStop(1, rgba(c, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function drawGridPattern() {
+    ctx.strokeStyle = rgba(pal.gridBright, 0.15);
+    ctx.lineWidth = 1;
+    const step = 44;
+    ctx.beginPath();
+    for (let x = step; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = step; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  }
+
+  function drawLamp(t) {
+    const flick = 0.94 + 0.06 * Math.sin(t / 260) * Math.sin(t / 97);
+    const lx = W / 2, ly = -10;
+    const warm = tintRGB([255, 196, 120], THEMES[themeKey]);
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, rgba(warm, 0.26 * flick));
+    g.addColorStop(0.55, rgba(warm, 0.10 * flick));
+    g.addColorStop(1, rgba(warm, 0.02 * flick));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(lx - 26, ly);
+    ctx.lineTo(lx + 26, ly);
+    ctx.lineTo(lx + W * 0.34, H);
+    ctx.lineTo(lx - W * 0.34, H);
+    ctx.closePath();
+    ctx.fill();
+    const rg = ctx.createRadialGradient(lx, ly + 24, 0, lx, ly + 24, 130);
+    rg.addColorStop(0, rgba([255, 240, 200], 0.85 * flick));
+    rg.addColorStop(1, rgba(warm, 0));
+    ctx.fillStyle = rg;
+    ctx.fillRect(lx - 140, ly - 116, 280, 280);
+  }
+
+  function drawNoise(t) {
+    const n = modeState.noise;
+    if (!n) return;
+    const ox = reduced ? 0 : Math.floor(Math.random() * n.width);
+    const oy = reduced ? 0 : Math.floor(Math.random() * n.height);
+    for (let x = -n.width; x < W + n.width; x += n.width) {
+      for (let y = -n.height; y < H + n.height; y += n.height) {
+        ctx.drawImage(n, x - ox, y - oy);
+      }
+    }
+  }
+
+  function drawParticles(t, dt) {
+    for (const p of modeState.parts) {
+      p.y -= (p.sp * dt) / 1000;
+      p.x += Math.sin(t / 1000 + p.sw) * 0.35;
+      if (p.y < -6) { p.y = H + 6; p.x = Math.random() * W; }
+      if (p.x < -6) p.x = W + 6;
+      if (p.x > W + 6) p.x = -6;
+      ctx.fillStyle = rgba(pal.sparkle, p.a);
+      ctx.fillRect(p.x, p.y, p.r * 2, p.r * 2);
+    }
+  }
+
+  function drawRetro(t) {
+    const hz = H * 0.44;
+    const c = pal.gridBright;
+    const g = ctx.createLinearGradient(0, hz - 70, 0, hz + 2);
+    g.addColorStop(0, rgba(c, 0));
+    g.addColorStop(1, rgba(c, 0.35));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, hz - 70, W, 72);
+    ctx.strokeStyle = rgba(c, 0.55);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, hz); ctx.lineTo(W, hz);
+    ctx.stroke();
+    ctx.strokeStyle = rgba(c, 0.22);
+    ctx.beginPath();
+    const vp = W / 2;
+    for (let i = -12; i <= 12; i++) {
+      ctx.moveTo(vp + i * 26, hz);
+      ctx.lineTo(vp + i * W * 0.14, H);
+    }
+    ctx.stroke();
+    const speed = t / 1000 * 0.6;
+    ctx.strokeStyle = rgba(c, 0.30);
+    ctx.beginPath();
+    for (let i = 0; i < 14; i++) {
+      const f = (i + (speed % 1)) / 14;
+      const y = hz + (H - hz) * f * f;
+      ctx.moveTo(0, y); ctx.lineTo(W, y);
+    }
+    ctx.stroke();
+  }
+
+  function drawShooting(t, dt) {
+    // dense starfield backdrop
+    for (const s of modeState.shootStars) {
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(t / 1000 * s.w + s.ph));
+      ctx.fillStyle = rgba(pal.star, +(s.a * tw).toFixed(3));
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+    if (!modeState.meteor && Math.random() < (dt / 1000) * 0.3) {
+      const fromLeft = Math.random() < 0.5;
+      modeState.meteor = {
+        x: W * (0.15 + Math.random() * 0.7),
+        y: H * (0.04 + Math.random() * 0.25),
+        vx: (fromLeft ? 1 : -1) * (W * 0.28) / 1000,
+        vy: (H * 0.16) / 1000,
+        life: 900,
+      };
+    }
+    const m = modeState.meteor;
+    if (!m) return;
+    m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt;
+    const len = 130;
+    const tailX = m.x - m.vx / Math.hypot(m.vx, m.vy) * len;
+    const tailY = m.y - m.vy / Math.hypot(m.vx, m.vy) * len;
+    const fade = Math.min(1, m.life / 500);
+    const g = ctx.createLinearGradient(m.x, m.y, tailX, tailY);
+    g.addColorStop(0, rgba(pal.sparkle, 0.9 * fade));
+    g.addColorStop(1, rgba(pal.sparkle, 0));
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(m.x, m.y); ctx.lineTo(tailX, tailY);
+    ctx.stroke();
+    if (m.life <= 0 || m.y > H + 40 || m.x < -60 || m.x > W + 60) modeState.meteor = null;
+  }
+
+  function buildModeExtras() {
+    modeState = { meteor: null };
+    if (bgMode === 'shooting') {
+      modeState.shootStars = Array.from({ length: 150 }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H * 0.9,
+        r: Math.random() < 0.85 ? 2 : 3,
+        a: 0.25 + Math.random() * 0.75,
+        w: 0.5 + Math.random() * 1.5,
+        ph: Math.random() * Math.PI * 2,
+      }));
+    }
+    if (bgMode === 'particles') {
+      modeState.parts = Array.from({ length: 90 }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: 1 + Math.random() * 1.5,
+        sp: 8 + Math.random() * 26,
+        sw: Math.random() * Math.PI * 2,
+        a: 0.25 + Math.random() * 0.5,
+      }));
+    }
+    if (bgMode === 'noise') {
+      const n = document.createElement('canvas');
+      n.width = n.height = 200;
+      const nc = n.getContext('2d');
+      const img = nc.createImageData(n.width, n.height);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = 60 + Math.random() * 140;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+        img.data[i + 3] = 22;
+      }
+      nc.putImageData(img, 0, 0);
+      modeState.noise = n;
+    }
+    if (bgMode === 'aurora') modeState.auroraFor = null; // force color rebuild
+  }
+
   let raf = null, last = 0;
   function frame(now) {
     const dt = Math.min(now - last, 100);
     last = now;
     step(dt);
-    draw(now);
+    draw(now, dt);
     raf = requestAnimationFrame(frame);
   }
 
@@ -465,6 +684,7 @@ const bgApi = (function background() {
     buildGrid();
     buildStars();
     buildCelestial();
+    buildModeExtras();
     buildColorCache();
     start();
   }
@@ -483,6 +703,12 @@ const bgApi = (function background() {
       if (!THEMES[key]) return;
       themeKey = key;
       buildCelestial();
+      if (reduced) draw(0);
+    },
+    setMode(mode) {
+      if (mode === bgMode) return;
+      bgMode = mode;
+      buildModeExtras();
       if (reduced) draw(0);
     },
   };
@@ -641,6 +867,29 @@ const bgApi = (function background() {
   });
   renderShowOpts();
   applyShow(loadShow());
+
+  // background style
+  const bgOpts = document.getElementById('bg-opts');
+  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting'];
+  function currentBg() {
+    const b = loadStored('home:bg');
+    return VALID_BGS.includes(b) ? b : 'scene';
+  }
+  function renderBgOpts() {
+    const cur = currentBg();
+    for (const b of bgOpts.children) {
+      b.classList.toggle('active', b.dataset.bg === cur);
+    }
+  }
+  bgOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-bg]');
+    if (!b) return;
+    store('home:bg', b.dataset.bg);
+    bgApi.setMode(b.dataset.bg);
+    renderBgOpts();
+  });
+  renderBgOpts();
+  bgApi.setMode(currentBg());
 
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);
