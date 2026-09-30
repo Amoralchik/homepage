@@ -926,6 +926,7 @@ const bgApi = (function background() {
 
         const msg = document.createElement('div');
         msg.className = 'wg-vibes-msg';
+        msg.textContent = pick(); // show one right away, more follow on the timer
         const hint = document.createElement('div');
         hint.className = 'wg-vibes-hint';
         hint.textContent = 'click for another';
