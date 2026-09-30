@@ -117,11 +117,14 @@
     <div class="set-row">
       <span class="set-name">Wall</span>
       <div class="wall-actions">
-        <button type="button" class="wall-btn" id="wall-set">Set image…</button>
+        <button type="button" class="wall-btn" id="wall-open">Wallpaper…</button>
         <button type="button" class="wall-btn" id="wall-clear">Clear</button>
-        <input type="file" id="wall-input" accept="image/*" hidden />
       </div>
     </div>
+    <div class="set-row">
+      <span class="set-name">Dots</span>
+      <input type="range" id="dot-size" class="dot-slider" min="8" max="26" step="2" value="14" aria-label="Halftone dot size" />
+      <span class="set-val" id="dot-size-val">14</span>
     </div>
     <div class="set-row">
       <span class="set-name">Show</span>
@@ -132,6 +135,28 @@
         <button type="button" data-show="time">Time</button>
         <button type="button" data-show="help">Help</button>
         <button type="button" data-show="pulse">Pulse</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wall-modal" id="wall-modal" aria-hidden="true">
+    <div class="wall-box" role="dialog" aria-label="Set wallpaper">
+      <header class="wall-head">
+        <span class="wall-title">WALLPAPER</span>
+        <button type="button" class="mod-icon-btn" id="wall-close" aria-label="Close">×</button>
+      </header>
+      <div class="wall-drop" id="wall-drop">
+        <strong>Drop an image here</strong>
+        <span>or pick one below · saved locally, never uploaded</span>
+      </div>
+      <div class="wall-url-row">
+        <input type="text" id="wall-url" placeholder="paste image URL…" spellcheck="false" autocomplete="off" />
+        <button type="button" class="wall-btn" id="wall-url-load">Load</button>
+      </div>
+      <div class="wall-actions-row">
+        <button type="button" class="wall-btn" id="wall-browse">Browse files…</button>
+        <button type="button" class="wall-btn" id="wall-clear">Clear wallpaper</button>
+        <input type="file" id="wall-input" accept="image/*" hidden />
       </div>
     </div>
   </div>

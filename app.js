@@ -237,6 +237,7 @@ const bgApi = (function background() {
   let bgMode = 'scene';
   let modeState = {};
   let wallpaperImg = null;
+  let dotSize = 14;
 
   const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
@@ -651,7 +652,7 @@ const bgApi = (function background() {
   function drawHalftone() {
     const sample = modeState.halftone;
     if (!sample) return;
-    const cell = 14;
+    const cell = dotSize;
     // bright dots mixed with the theme accent so they read on any sky
     const base = [0, 1, 2].map(i => Math.round(pal.star[i] * 0.45 + 255 * 0.55));
     const warm = pal.sunGlow;
@@ -674,8 +675,8 @@ const bgApi = (function background() {
 
   function buildHalftoneSample() {
     const src = wallpaperImg;
-    const cols = Math.ceil(W / 14) + 1;
-    const rows = Math.ceil(H / 14) + 1;
+    const cols = Math.ceil(W / dotSize) + 1;
+    const rows = Math.ceil(H / dotSize) + 1;
     const off = document.createElement('canvas');
     off.width = cols;
     off.height = rows;
@@ -700,11 +701,18 @@ const bgApi = (function background() {
       oc.fillStyle = glow;
       oc.fillRect(0, 0, cols, rows);
     }
-    const d = oc.getImageData(0, 0, cols, rows).data;
+    let d = null;
+    try { d = oc.getImageData(0, 0, cols, rows).data; }
+    catch (err) {
+      // cross-origin wallpaper without CORS headers taints the sample buffer
+      d = null;
+    }
     const data = new Float32Array(cols * rows);
-    for (let i = 0; i < cols * rows; i++) {
-      const lum = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
-      data[i] = Math.max(0, Math.min(1, (lum - 0.02) / 0.95));
+    if (d) {
+      for (let i = 0; i < cols * rows; i++) {
+        const lum = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+        data[i] = Math.max(0, Math.min(1, (lum - 0.02) / 0.95));
+      }
     }
     modeState.halftone = { data, cols, rows };
   }
@@ -818,6 +826,13 @@ const bgApi = (function background() {
     },
     setWallpaper(img) {
       wallpaperImg = img;
+      if (bgMode === 'halftone') buildHalftoneSample();
+      if (reduced) draw(0);
+    },
+    setDotSize(v) {
+      const n = Math.max(8, Math.min(26, Math.round(v) || 14));
+      if (n === dotSize) return;
+      dotSize = n;
       if (bgMode === 'halftone') buildHalftoneSample();
       if (reduced) draw(0);
     },
@@ -1003,9 +1018,13 @@ const bgApi = (function background() {
   bgApi.setMode(currentBg());
 
   // wallpaper for the halftone background (stored locally in IndexedDB)
-  const wallSet = document.getElementById('wall-set');
-  const wallClear = document.getElementById('wall-clear');
+  const wallOpenBtn = document.getElementById('wall-open');
+  const wallClearBtn = document.getElementById('wall-clear');
+  const wallBrowse = document.getElementById('wall-browse');
   const wallInput = document.getElementById('wall-input');
+  const wallModal = document.getElementById('wall-modal');
+  const wallDrop = document.getElementById('wall-drop');
+  const wallUrl = document.getElementById('wall-url');
 
   function idbOpen() {
     return new Promise((res, rej) => {
@@ -1035,30 +1054,73 @@ const bgApi = (function background() {
     });
   }
 
-  function applyWallpaper(dataUrl) {
-    if (!dataUrl) { bgApi.setWallpaper(null); return; }
+  function applyWallpaper(src) {
+    if (!src) { bgApi.setWallpaper(null); return; }
     const img = new Image();
+    if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
     img.onload = () => bgApi.setWallpaper(img);
-    img.src = dataUrl;
+    img.src = src;
   }
 
-  wallSet.addEventListener('click', () => wallInput.click());
-  wallInput.addEventListener('change', () => {
-    const file = wallInput.files && wallInput.files[0];
-    if (!file) return;
+  function setWallModal(open) {
+    wallModal.classList.toggle('open', open);
+    wallModal.setAttribute('aria-hidden', String(!open));
+  }
+  wallOpenBtn.addEventListener('click', () => setWallModal(true));
+  document.getElementById('wall-close').addEventListener('click', () => setWallModal(false));
+  wallModal.addEventListener('click', e => { if (e.target === wallModal) setWallModal(false); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && wallModal.classList.contains('open')) setWallModal(false);
+  });
+
+  function loadWallFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = async () => {
       await idbSet('wallpaper', reader.result);
       applyWallpaper(reader.result);
+      setWallModal(false);
     };
     reader.readAsDataURL(file);
-    wallInput.value = '';
-  });
-  wallClear.addEventListener('click', async () => {
+  }
+
+  ['dragenter', 'dragover'].forEach(ev =>
+    wallDrop.addEventListener(ev, e => { e.preventDefault(); wallDrop.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach(ev =>
+    wallDrop.addEventListener(ev, e => { e.preventDefault(); wallDrop.classList.remove('drag'); }));
+  wallDrop.addEventListener('drop', e => loadWallFile(e.dataTransfer.files && e.dataTransfer.files[0]));
+  wallBrowse.addEventListener('click', () => wallInput.click());
+  wallInput.addEventListener('change', () => loadWallFile(wallInput.files && wallInput.files[0]));
+
+  function loadWallUrl() {
+    const u = wallUrl.value.trim();
+    if (!u) return;
+    wallUrl.value = '';
+    applyWallpaper(u);
+    setWallModal(false);
+  }
+  document.getElementById('wall-url-load').addEventListener('click', loadWallUrl);
+  wallUrl.addEventListener('keydown', e => { if (e.key === 'Enter') loadWallUrl(); });
+
+  wallClearBtn.addEventListener('click', async () => {
     await idbSet('wallpaper', null);
     bgApi.setWallpaper(null);
   });
   idbGet('wallpaper').then(applyWallpaper).catch(() => { });
+
+  // halftone dot size slider
+  const dotSlider = document.getElementById('dot-size');
+  const dotVal = document.getElementById('dot-size-val');
+  const savedDots = Math.max(8, Math.min(26, +(loadStored('home:dots') || 14)));
+  dotSlider.value = String(savedDots);
+  dotVal.textContent = String(savedDots);
+  bgApi.setDotSize(savedDots);
+  dotSlider.addEventListener('input', () => {
+    const v = +dotSlider.value;
+    dotVal.textContent = String(v);
+    store('home:dots', String(v));
+    bgApi.setDotSize(v);
+  });
 
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);

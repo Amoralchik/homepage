@@ -283,73 +283,32 @@ body.no-input .center-wrap { display: none; }
 body.no-time .pill { display: none; }
 body.no-help .hint { display: none; }
 
-/* pulsing border on the search box (theme-colored, rotating gradient) */
+/* pulsing border on the search box — a smooth breathing glow */
 
-@property --pulse-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
+@keyframes border-pulse {
+  0%, 100% {
+    border-color: var(--border-strong);
+    box-shadow:
+      0 24px 70px var(--edge),
+      0 0 0 1px var(--edge),
+      0 0 90px var(--glow),
+      0 0 10px 0 var(--sel);
+  }
+  50% {
+    border-color: var(--accent);
+    box-shadow:
+      0 24px 70px var(--edge),
+      0 0 0 1px var(--edge),
+      0 0 90px var(--glow),
+      0 0 34px 6px var(--sel);
+  }
 }
 
-@keyframes pulse-spin {
-  to { --pulse-angle: 360deg; }
+body.no-pulse .search {
+  animation: rise 0.7s 0.08s both;
 }
 
-@keyframes pulse-breathe {
-  0%, 100% { opacity: 0.65; }
-  50% { opacity: 1; }
-}
-
-.search::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: 20px;
-  background: conic-gradient(
-    from var(--pulse-angle),
-    var(--accent),
-    transparent 22%,
-    var(--accent) 42%,
-    transparent 65%,
-    var(--accent)
-  );
-  filter: blur(7px);
-  opacity: 0.7;
-  z-index: -1;
-  animation:
-    pulse-spin 4s linear infinite,
-    pulse-breathe 2.6s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.search::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: 19px;
-  padding: 1px;
-  background: conic-gradient(
-    from var(--pulse-angle),
-    var(--accent),
-    transparent 25%,
-    var(--accent) 50%,
-    transparent 75%,
-    var(--accent)
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  animation: pulse-spin 4s linear infinite;
-  pointer-events: none;
-}
-
-body.no-pulse .search::before,
-body.no-pulse .search::after {
-  display: none;
-}
-
-/* ---------- search box ---------- */
+/* ---------- search box ---------- *//* ---------- search box ---------- */
 
 .search {
   position: relative;
@@ -364,8 +323,10 @@ body.no-pulse .search::after {
     0 0 90px var(--glow);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  animation: rise 0.7s 0.08s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  transition: border-color 0.2s, box-shadow 0.2s, background 1s ease;
+  animation:
+    rise 0.7s 0.08s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    border-pulse 2.8s ease-in-out infinite;
+  transition: border-color 0.2s, background 1s ease;
 }
 
 .search:focus-within {
@@ -947,6 +908,16 @@ body.no-pulse .search::after {
   font: 400 9px/1 "Silkscreen", "Courier New", monospace;
 }
 
+.wg-rt {
+  flex: none;
+  font: 400 7px/1 "Silkscreen", "Courier New", monospace;
+  letter-spacing: 0.06em;
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
 .wg-dest {
   flex: 1;
   color: var(--text-2);
@@ -1049,6 +1020,140 @@ body.no-pulse .search::after {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* wallpaper picker */
+
+.wall-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.wall-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--key-border);
+  background: var(--key-bg);
+  color: var(--key-fg);
+  font: 500 11.5px/1 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.wall-btn:hover { color: var(--text); }
+.wall-btn:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 1px; }
+
+.dot-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--key-border);
+  cursor: pointer;
+  outline: none;
+}
+
+.dot-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.dot-slider:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; }
+
+.set-val {
+  flex: none;
+  min-width: 20px;
+  text-align: right;
+  color: var(--text-2);
+  font: 500 11px/1 "Inter", system-ui, sans-serif;
+}
+
+/* wallpaper modal */
+
+.wall-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 5, 12, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 40;
+}
+
+.wall-modal.open { opacity: 1; pointer-events: auto; }
+
+.wall-box {
+  width: min(440px, 92vw);
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--suggest-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 80px var(--edge);
+  transform: translateY(10px) scale(0.97);
+  transition: transform 0.2s;
+}
+
+.wall-modal.open .wall-box { transform: none; }
+
+.wall-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font: 400 10px/1 "Silkscreen", "Courier New", monospace;
+  letter-spacing: 0.08em;
+  color: var(--pill-text);
+}
+
+.wall-drop {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 12px;
+  padding: 26px 14px;
+  text-align: center;
+  color: var(--text-3);
+  font: 400 12px/1.6 "Inter", system-ui, sans-serif;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.wall-drop strong {
+  display: block;
+  color: var(--text-2);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.wall-drop span { font-size: 11px; }
+
+.wall-drop.drag {
+  border-color: var(--accent);
+  background: var(--hover);
+  color: var(--text-2);
+}
+
+.wall-url-row { display: flex; gap: 8px; margin: 12px 0; }
+
+.wall-url-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--key-bg);
+  color: var(--text);
+  font: 500 12.5px/1.2 "Inter", system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.wall-url-row input:focus { border-color: var(--border-strong); }
+.wall-url-row input::placeholder { color: var(--text-3); }
+
+.wall-actions-row { display: flex; gap: 8px; margin-top: 12px; }
 
 @media (prefers-reduced-motion: reduce) {
   .search, .pill { animation: none; }
