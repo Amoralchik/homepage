@@ -2,10 +2,13 @@
 body[data-phase="night"] {
   --bg: #050a18;
   --panel: rgba(9, 16, 36, 0.82);
+  --panel-base: rgba(9, 16, 36, 0.82);
   --suggest-bg: rgba(7, 13, 30, 0.97);
+  --suggest-bg-base: rgba(7, 13, 30, 0.97);
   --border: rgba(104, 133, 240, 0.22);
   --border-strong: rgba(120, 148, 255, 0.45);
   --edge: rgba(2, 6, 20, 0.5);
+  --edge-base: rgba(2, 6, 20, 0.5);
   --text: #d7e0fb;
   --text-2: #8fa0d4;
   --text-3: #55628f;
@@ -13,18 +16,22 @@ body[data-phase="night"] {
   --halo1: rgba(43, 72, 190, 0.14);
   --halo2: rgba(90, 120, 235, 0.10);
   --hover: rgba(96, 126, 230, 0.13);
+  --hover-base: rgba(96, 126, 230, 0.13);
   --chip-bg: rgba(108, 140, 255, 0.16);
+  --chip-bg-base: rgba(108, 140, 255, 0.16);
   --chip-fg: #aebbe8;
   --submit-bg: #22305e;
   --submit-bg-hover: #2b3d78;
   --submit-fg: #c6d2ff;
   --pill-bg: rgba(8, 15, 34, 0.7);
+  --pill-bg-base: rgba(8, 15, 34, 0.7);
   --pill-border: rgba(104, 133, 240, 0.25);
   --pill-text: #7d8fd0;
   --pill-dim: #46538a;
   --hint: #3d4a76;
   --key-border: rgba(104, 133, 240, 0.25);
   --key-bg: rgba(8, 15, 34, 0.6);
+  --key-bg-base: rgba(8, 15, 34, 0.6);
   --key-fg: #5b6ba8;
   --glow: rgba(47, 82, 219, 0.10);
   --glow-strong: rgba(66, 99, 235, 0.22);
@@ -36,10 +43,13 @@ body[data-phase="morning"],
 body[data-phase="day"] {
   --bg: #9fd4ff;
   --panel: rgba(255, 255, 255, 0.66);
+  --panel-base: rgba(255, 255, 255, 0.66);
   --suggest-bg: rgba(255, 255, 255, 0.97);
+  --suggest-bg-base: rgba(255, 255, 255, 0.97);
   --border: rgba(28, 64, 130, 0.20);
   --border-strong: rgba(24, 90, 200, 0.45);
   --edge: rgba(30, 60, 120, 0.14);
+  --edge-base: rgba(30, 60, 120, 0.14);
   --text: #122a4c;
   --text-2: #3a5a86;
   --text-3: #7792b8;
@@ -47,18 +57,22 @@ body[data-phase="day"] {
   --halo1: rgba(255, 255, 255, 0.35);
   --halo2: rgba(255, 214, 140, 0.30);
   --hover: rgba(30, 102, 208, 0.10);
+  --hover-base: rgba(30, 102, 208, 0.10);
   --chip-bg: rgba(30, 102, 208, 0.12);
+  --chip-bg-base: rgba(30, 102, 208, 0.12);
   --chip-fg: #2b57a8;
   --submit-bg: #1c4f9e;
   --submit-bg-hover: #2a63b8;
   --submit-fg: #eaf3ff;
   --pill-bg: rgba(255, 255, 255, 0.55);
+  --pill-bg-base: rgba(255, 255, 255, 0.55);
   --pill-border: rgba(28, 64, 130, 0.22);
   --pill-text: #3a5a86;
   --pill-dim: #8aa3c4;
   --hint: #6b87ad;
   --key-border: rgba(28, 64, 130, 0.25);
   --key-bg: rgba(255, 255, 255, 0.6);
+  --key-bg-base: rgba(255, 255, 255, 0.6);
   --key-fg: #4a678f;
   --glow: rgba(30, 102, 208, 0.14);
   --glow-strong: rgba(30, 102, 208, 0.26);
@@ -75,10 +89,13 @@ body[data-phase="day"] {
 body[data-phase="evening"] {
   --bg: #241a33;
   --panel: rgba(40, 22, 34, 0.82);
+  --panel-base: rgba(40, 22, 34, 0.82);
   --suggest-bg: rgba(30, 16, 25, 0.97);
+  --suggest-bg-base: rgba(30, 16, 25, 0.97);
   --border: rgba(255, 150, 100, 0.22);
   --border-strong: rgba(255, 170, 120, 0.45);
   --edge: rgba(20, 8, 14, 0.5);
+  --edge-base: rgba(20, 8, 14, 0.5);
   --text: #ffe4d0;
   --text-2: #d8a58c;
   --text-3: #9c6f60;
@@ -86,18 +103,22 @@ body[data-phase="evening"] {
   --halo1: rgba(255, 120, 70, 0.12);
   --halo2: rgba(255, 170, 110, 0.10);
   --hover: rgba(255, 150, 100, 0.12);
+  --hover-base: rgba(255, 150, 100, 0.12);
   --chip-bg: rgba(255, 158, 107, 0.16);
+  --chip-bg-base: rgba(255, 158, 107, 0.16);
   --chip-fg: #f0b694;
   --submit-bg: #5a2e22;
   --submit-bg-hover: #75392a;
   --submit-fg: #ffd9c2;
   --pill-bg: rgba(40, 22, 34, 0.7);
+  --pill-bg-base: rgba(40, 22, 34, 0.7);
   --pill-border: rgba(255, 150, 100, 0.22);
   --pill-text: #d8a58c;
   --pill-dim: #8a5f50;
   --hint: #8a5f50;
   --key-border: rgba(255, 150, 100, 0.25);
   --key-bg: rgba(40, 22, 34, 0.6);
+  --key-bg-base: rgba(40, 22, 34, 0.6);
   --key-fg: #b07a62;
   --glow: rgba(255, 120, 70, 0.14);
   --glow-strong: rgba(255, 140, 90, 0.26);
@@ -216,7 +237,7 @@ body[data-theme="blue"] {
 body[data-theme="rose"] {
   --accent: #e05a94;
   --border: rgba(240, 111, 168, 0.32);
-  --pill-border: rgba(240, 111, 168, 0.28);
+  --pill-border: rgba(240, 111, 168, 0.32);
   --border-strong: rgba(240, 111, 168, 0.50);
   --glow: rgba(240, 111, 168, 0.16);
   --glow-strong: rgba(240, 111, 168, 0.30);
@@ -226,6 +247,24 @@ body[data-theme="rose"] {
   --submit-bg: #96255c;
   --submit-bg-hover: #ad2d6c;
   --submit-fg: #ffd9e8;
+}
+
+/* themed surfaces: the glass itself (panels, inputs, settings, pills) picks
+   up ~12% of the active theme's hue in every phase, so the chrome stops
+   lagging behind the themed canvas. The neutral phase values above stay as
+   the Classic look and as the fallback where color-mix is unsupported.
+   Relative-color syntax keeps the low-alpha washes (hover, chips) from
+   turning opaque when mixed. */
+body[data-theme="dark"], body[data-theme="bright"], body[data-theme="cyberpunk"],
+body[data-theme="violet"], body[data-theme="red"], body[data-theme="green"],
+body[data-theme="blue"], body[data-theme="rose"] {
+  --panel: color-mix(in srgb, var(--panel-base) 88%, var(--accent));
+  --suggest-bg: color-mix(in srgb, var(--suggest-bg-base) 88%, var(--accent));
+  --pill-bg: color-mix(in srgb, var(--pill-bg-base) 88%, var(--accent));
+  --key-bg: color-mix(in srgb, var(--key-bg-base) 88%, var(--accent));
+  --edge: color-mix(in srgb, var(--edge-base) 85%, var(--accent));
+  --hover: color-mix(in srgb, var(--hover-base) 82%, rgb(from var(--accent) r g b / 0.13));
+  --chip-bg: color-mix(in srgb, var(--chip-bg-base) 82%, rgb(from var(--accent) r g b / 0.16));
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

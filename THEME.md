@@ -67,3 +67,36 @@ same way the sky does (last 25% of each phase).
 - `app.js` — `DayCycle.palette`/`lerpColor`, `LAMP_PHASES`, `lampNow`,
   `buildLamp`, `drawLamp`, `buildModeExtras` lamp branch, `setPalette` hook.
 - `README.md` — background list describes the new Lamp behavior.
+
+---
+
+# 2. Themed Surfaces — UI chrome accord
+
+**Problem:** the 9 themes only recolored accents (borders, glow, selection,
+submit button) while every surface stayed phase-fixed blue-navy glass — under
+Green or Cyberpunk the themed canvas sat behind blue UI panels.
+
+**Decision (interview):** subtle tint (~12% of the theme hue) on the glass
+surfaces, in **every phase** — night, morning/day and evening alike. Text
+colors stay phase-fixed to preserve contrast; only glass takes the hue.
+
+**Architecture** (style.css): each phase block keeps its neutral glass twice —
+as the working variable (`--panel`) and as `--panel-base` (same for
+`suggest-bg`, `pill-bg`, `key-bg`, `edge`, `hover`, `chip-bg`). One derivation
+block after the theme overrides recomputes the working variables for all
+non-Classic themes:
+
+    --panel: color-mix(in srgb, var(--panel-base) 88%, var(--accent));
+
+Because custom properties resolve per element, one rule covers every phase —
+no per-theme-per-phase tables. `--accent` is the tint source, so any future
+theme needs only an accent to get full surface accord. The low-alpha washes
+(`--hover`, `--chip-bg`) use relative-color syntax to keep their alpha from
+rising when mixed; browsers without `color-mix`/relative-color simply fall
+back to the neutral phase palettes. Classic is untouched by definition.
+
+**Verified:** Cyberpunk×night (plum-black glass), Green×evening (forest-dusk),
+Rose×morning and Violet×day (blush/lavender white glass) — legible throughout.
+
+**Deferred:** theme-switch cross-fade transitions on panels (currently only
+body background fades), and per-background-mode UI accents.
