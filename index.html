@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Home</title>
+  <meta name="description" content="A tiny pixel world on your new tab: day/night cycle, 10 backgrounds, widgets and multi-provider search. Free and open source; everything stays on your machine." />
+  <script>
+    // The extension keeps its short tab title; the served demo (Pages, file://) gets the findable one.
+    if (location.protocol !== 'chrome-extension:') {
+      document.title = 'Home — pixel-art start page for Chrome';
+    }
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230a1428'/%3E%3Crect x='7' y='3' width='2' height='2' fill='%236c8cff'/%3E%3Crect x='5' y='5' width='6' height='2' fill='%236c8cff'/%3E%3Crect x='3' y='7' width='10' height='2' fill='%236c8cff'/%3E%3Crect x='5' y='9' width='2' height='4' fill='%236c8cff'/%3E%3Crect x='9' y='9' width='2' height='4' fill='%236c8cff'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,6 +19,8 @@
 </head>
 <body>
   <canvas id="bg" aria-hidden="true"></canvas>
+
+  <nav class="tab-strip" id="tab-strip" aria-label="Tabs"></nav>
 
   <main class="page">
     <div class="center-wrap">
@@ -135,6 +144,14 @@
         <button type="button" data-show="time">Time</button>
         <button type="button" data-show="help">Help</button>
         <button type="button" data-show="pulse">Pulse</button>
+      </div>
+    </div>
+    <div class="set-row" id="tabs-row">
+      <span class="set-name">Tabs</span>
+      <div class="phase-opts" id="tabs-opts" role="group" aria-label="Tab strip on top">
+        <button type="button" data-tabs="off">Off</button>
+        <button type="button" data-tabs="top">Most used</button>
+        <button type="button" data-tabs="recent">Recent</button>
       </div>
     </div>
   </div>

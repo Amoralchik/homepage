@@ -1122,6 +1122,135 @@ const bgApi = (function background() {
     bgApi.setDotSize(v);
   });
 
+  /* ---------- tab strip (middle top) ---------- */
+
+  // A line of tabs on the middle top: "recent" lists the tabs you had open
+  // last (click focuses that tab), "top" lists your most used sites, ranked
+  // by background.js (click focuses the site's tab or opens it here).
+
+  const stripEl = document.getElementById('tab-strip');
+  const tabsRow = document.getElementById('tabs-row');
+  const tabsOpts = document.getElementById('tabs-opts');
+  const VALID_TAB_MODES = ['off', 'top', 'recent'];
+  const STRIP_MAX = 8;
+
+  function tabsApi() {
+    return typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query ? chrome : null;
+  }
+
+  function currentTabMode() {
+    const m = loadStored('home:tabs');
+    return VALID_TAB_MODES.includes(m) ? m : 'recent';
+  }
+
+  function renderTabOpts() {
+    const cur = currentTabMode();
+    for (const b of tabsOpts.children) {
+      b.classList.toggle('active', b.dataset.tabs === cur);
+    }
+  }
+
+  function hostOf(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; }
+  }
+
+  async function stripItems(mode) {
+    const chromeApi = tabsApi();
+    if (!chromeApi) return [];
+    if (mode === 'top') {
+      if (!(chromeApi.storage && chromeApi.storage.local)) return [];
+      const got = await chromeApi.storage.local.get('home:tabCounts');
+      const data = (got && got['home:tabCounts']) || {};
+      return Object.values(data)
+        .sort((a, b) => b.count - a.count || b.last - a.last)
+        .slice(0, STRIP_MAX)
+        .map(e => ({ label: hostOf(e.url), url: e.url, fav: e.fav || '' }));
+    }
+    const selfPrefix = location.origin + '/';
+    const tabs = await chromeApi.tabs.query({});
+    return tabs
+      .filter(t => t.url && !t.url.startsWith(selfPrefix) && t.url !== 'about:blank')
+      .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
+      .slice(0, STRIP_MAX)
+      .map(t => ({ label: t.title || hostOf(t.url), url: t.url, fav: t.favIconUrl || '', tabId: t.id, windowId: t.windowId }));
+  }
+
+  function stripFavicon(it) {
+    const holder = document.createElement('span');
+    holder.className = 'tab-fav';
+    holder.textContent = (it.label[0] || '·').toUpperCase();
+    if (it.fav && /^https?:/.test(it.fav)) {
+      const img = document.createElement('img');
+      img.src = it.fav;
+      img.alt = '';
+      img.addEventListener('error', () => img.remove());
+      holder.appendChild(img);
+    }
+    return holder;
+  }
+
+  async function openStripItem(it) {
+    const chromeApi = tabsApi();
+    if (!chromeApi) return;
+    if (it.tabId != null) {
+      try {
+        await chromeApi.tabs.update(it.tabId, { active: true });
+        if (it.windowId != null) await chromeApi.windows.update(it.windowId, { focused: true });
+      } catch (e) { /* tab closed since the last refresh */ }
+      return;
+    }
+    // a most-used site that's actually open right now? focus that tab
+    try {
+      const open = await chromeApi.tabs.query({ url: it.url + '*' });
+      if (open.length) {
+        await chromeApi.tabs.update(open[0].id, { active: true });
+        await chromeApi.windows.update(open[0].windowId, { focused: true });
+        return;
+      }
+    } catch (e) { }
+    location.href = it.url;
+  }
+
+  async function refreshTabStrip() {
+    if (document.body.classList.contains('no-tabs')) return;
+    let items = [];
+    try { items = await stripItems(currentTabMode()); } catch (e) { items = []; }
+    stripEl.innerHTML = '';
+    stripEl.classList.toggle('has-items', items.length > 0);
+    for (const it of items) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'tab-chip';
+      chip.title = it.label + (it.url && it.url !== it.label ? '\n' + it.url : '');
+      chip.addEventListener('click', () => openStripItem(it));
+      chip.appendChild(stripFavicon(it));
+      const label = document.createElement('span');
+      label.className = 'tab-chip-label';
+      label.textContent = it.label;
+      chip.appendChild(label);
+      stripEl.appendChild(chip);
+    }
+  }
+
+  function applyTabStrip() {
+    const mode = currentTabMode();
+    document.body.classList.toggle('no-tabs', mode === 'off' || !tabsApi());
+    refreshTabStrip();
+  }
+
+  tabsOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-tabs]');
+    if (!b) return;
+    store('home:tabs', b.dataset.tabs);
+    renderTabOpts();
+    applyTabStrip();
+  });
+  if (!tabsApi()) tabsRow.hidden = true; // no tab data outside the extension
+  renderTabOpts();
+  applyTabStrip();
+  setInterval(() => { if (!document.hidden) refreshTabStrip(); }, 5000);
+
+
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);
     settingsBtn.setAttribute('aria-expanded', String(open));

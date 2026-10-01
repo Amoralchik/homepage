@@ -4,6 +4,11 @@ A minimal pixel-art start page for Chrome, styled after the opencode launcher: a
 **flickering grid** (Velora-style staggered fades), twinkling pixel stars, a pixel sun/moon
 that arcs with the clock, and a centered search box with a **provider dropdown**.
 
+**Try it live:** the same page runs in the browser at
+[amoralchik.github.io/homepage](https://amoralchik.github.io/homepage/) — no install needed.
+Outside the extension the tab strip hides and autocomplete falls back to Google's JSONP
+endpoint (see the note below); everything else is identical.
+
 | Night | Morning |
 |---|---|
 | ![Night theme](docs/screenshots/night.png) | ![Morning theme](docs/screenshots/morning.png) |
@@ -60,6 +65,15 @@ the search input, the time pill, the help dock, and the **pulsing border** on th
 search box — for a completely custom minimal (or maximal) layout. Toggles persist
 like everything else.
 
+**Tab strip:** the **Tabs** row pins a line of tabs to the middle top of the page.
+**Recent** lists the tabs you had open last (across all windows) — clicking one
+focuses that exact tab; **Most used** lists your top sites, ranked by a tiny
+background tracker that counts tab activations and page loads. Clicking a most-used
+site focuses its tab if it's open right now, otherwise opens it in place. Both modes
+stay live (the strip refreshes every few seconds) and fall back to letter chips when
+a favicon is missing. Outside the extension the strip is unavailable and the row
+disappears.
+
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
 It ships with a **Bus tracker** (live countdowns, simulated feed) and **Good vibes**
@@ -84,6 +98,7 @@ anytime with `?phase=morning` / `day` / `evening` / `night` in the URL (or set
 | `index.html`   | Page markup                                      |
 | `style.css`    | Layout, search box, dropdown, pill, hints        |
 | `app.js`       | Flickering-grid canvas, sun/moon, search logic   |
+| `background.js` | Counts tab/site usage for the "Most used" strip |
 | `manifest.json` | Makes the folder a load-unpacked Chrome extension |
 | `serve.py`     | Optional dev preview server (no-cache headers)   |
 
@@ -93,6 +108,10 @@ anytime with `?phase=morning` / `day` / `evening` / `night` in the URL (or set
 2. Turn on **Developer mode** (top right)
 3. Click **Load unpacked** and select this folder
 4. Open a new tab — done.
+
+The extension asks for the `tabs` and `storage` permissions — `tabs` is what lets the
+tab strip list (Chrome shows this as "Read your browsing activity"); the data never
+leaves your machine.
 
 ## Or set it as the Home / startup page
 
