@@ -195,10 +195,16 @@ function hslToRgb(h, s, l) {
   return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
 }
 
-// shifts a [r,g,b] color by the theme's hue/saturation/lightness transform
+// applies the theme's hue/saturation/lightness transform. Chromatic themes
+// anchor every color on their own hue: these palettes are built around a
+// blue family (~215°), and rotating base oranges by a fixed delta dragged
+// them clean off-theme — a "red" evening sunset went mint green. Anchoring
+// keeps sat/lum as multipliers, so phases still differ by brightness.
+const HUE_REF = 215;
+
 function tintRGB(c, t) {
   const [h, s, l] = rgbToHsl(c[0], c[1], c[2]);
-  const nh = (h + t.hue + 360) % 360;
+  const nh = t.hue ? (HUE_REF + t.hue) % 360 : h;
   const ns = Math.max(0, Math.min(100, s * t.sat));
   const nl = Math.max(0, Math.min(100, l * t.lum));
   return hslToRgb(nh, ns, nl);

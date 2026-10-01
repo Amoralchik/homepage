@@ -100,3 +100,40 @@ Rose×morning and Violet×day (blush/lavender white glass) — legible throughou
 
 **Deferred:** theme-switch cross-fade transitions on panels (currently only
 body background fades), and per-background-mode UI accents.
+
+---
+
+# 3. Theme Hue Audit (2026-10-01)
+
+**Report:** "red becomes green at evening" — chromatic themes drifted far off
+their expected color depending on time of day.
+
+**Root cause:** `tintRGB` *rotated* every base color by a fixed hue delta
+(`h + t.hue`). The deltas were calibrated on the night palette's navy
+(~224°), so they only worked there. The evening sunset is orange (~21°):
+under Red (+135°) it landed at 156° — mint green. Every chromatic theme had
+warm-phase offenders:
+
+| Theme  | Evening sunset was | Now  |
+|--------|--------------------|------|
+| red    | `#4effb9` mint     | `#ff4e6c` |
+| green  | `#da60ff` purple   | `#60ff60` |
+| violet | `#e3ff67` chartreuse | `#a667ff` |
+| cyberpunk | `#aaff72` light green | `#e772ff` |
+| rose   | `#75ff83` green    | `#ff75d1` |
+| blue   | `#ffde72` gold     | `#7272ff` |
+
+**Fix:** chromatic themes (`hue != 0`) now *anchor* every tinted color on the
+theme's own hue — `HUE_REF (215°) + t.hue` — instead of rotating further away
+from it. `hue: 0` themes (classic/dark/bright) pass hues through unchanged, so
+their look is bit-identical. Saturation/lightness multipliers are untouched:
+phases keep differing by brightness and vividness, and each theme's absolute
+`sunRamp`/`moonRamp` colors (already hand-picked per theme) confirm the
+anchor is the original design intent.
+
+**Verified:** red×evening (crimson world), green×evening (green dusk, was
+purple), classic×evening (regression: unchanged orange sunset).
+
+**Knob:** chromatic themes keep their existing `sat` multipliers, so Green's
+evening is loud (100% base saturation × 1.1). If a theme ever feels neon,
+tune its `sat` — hue is now guaranteed on-theme.
