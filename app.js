@@ -84,7 +84,7 @@ const DayCycle = (() => {
   function palette(date, forced) {
     const { name, next, k } = current(date, forced);
     const a = PALETTES[name], b = PALETTES[next];
-    const out = { phase: name };
+    const out = { phase: name, next, k };
     for (const key of ['skyTop', 'skyBot', 'gridDim', 'gridBright', 'sparkle', 'sunGlow']) {
       out[key] = lerpColor(a[key], b[key], k);
     }
@@ -106,7 +106,7 @@ const DayCycle = (() => {
     return { x: 0.14 + 0.72 * p, y: 0.52 - 0.40 * Math.sin(p * Math.PI) };
   }
 
-  return { current, palette, sunPos, moonPos };
+  return { current, palette, sunPos, moonPos, lerpColor };
 })();
 
 /* ================= themes ================= */
@@ -441,7 +441,7 @@ const bgApi = (function background() {
     switch (bgMode) {
       case 'aurora': return drawAurora(t);
       case 'grid': return drawGridPattern();
-      case 'lamp': return drawLamp(t);
+      case 'lamp': return drawLamp(t, dt);
       case 'noise': return drawNoise(t);
       case 'particles': return drawParticles(t, dt);
       case 'retro': return drawRetro(t);
@@ -497,25 +497,86 @@ const bgApi = (function background() {
     ctx.stroke();
   }
 
-  function drawLamp(t) {
-    const flick = 0.94 + 0.06 * Math.sin(t / 260) * Math.sin(t / 97);
+  /* lamp — warm light follows the clock instead of the theme tint:
+     a faint afterglow in the morning, effectively off by day,
+     switching on through dusk, full Reading-Lamp amber at night */
+  const LAMP_PHASES = {
+    morning: { cone: [255, 217, 166], a: 0.35 },
+    day:     { cone: [255, 226, 176], a: 0.08 },
+    evening: { cone: [255, 188, 114], a: 0.75 },
+    night:   { cone: [255, 197, 132], a: 1 },
+  };
+  const LAMP_CORE = [255, 243, 217];
+
+  function lampNow() {
+    const A = LAMP_PHASES[pal.phase] || LAMP_PHASES.night;
+    const B = LAMP_PHASES[pal.next] || A;
+    const k = pal.k || 0;
+    return {
+      cone: DayCycle.lerpColor(A.cone, B.cone, k),
+      a: A.a + (B.a - A.a) * k,
+    };
+  }
+
+  // the cone is pre-rendered and blurred once per palette change — stacked
+  // semi-transparent polygons band visibly, and per-frame blur would cost
+  function buildLamp() {
+    const { cone, a } = lampNow();
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const c = document.createElement('canvas');
+    c.width = W * dpr;
+    c.height = H * dpr;
+    const oc = c.getContext('2d');
+    oc.scale(dpr, dpr);
+    oc.filter = 'blur(26px)';
+    const g = oc.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, rgba(cone, 0.42 * a));
+    g.addColorStop(0.55, rgba(cone, 0.16 * a));
+    g.addColorStop(1, rgba(cone, 0.03 * a));
+    oc.fillStyle = g;
+    oc.beginPath();
+    oc.moveTo(W / 2 - 26, -10);
+    oc.lineTo(W / 2 + 26, -10);
+    oc.lineTo(W / 2 + W * 0.42, H);
+    oc.lineTo(W / 2 - W * 0.42, H);
+    oc.closePath();
+    oc.fill();
+    modeState.lamp = c;
+  }
+
+  function drawLamp(t, dt = 16) {
+    const { cone, a } = lampNow();
+    // gentler than the old ±6%: a bulb settles, it doesn't sputter
+    const flick = reduced ? 1 : 0.975 + 0.025 * Math.sin(t / 420) * Math.sin(t / 173);
+    if (modeState.lamp) {
+      ctx.globalAlpha = flick;
+      ctx.drawImage(modeState.lamp, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+
+    // dust motes drifting through the beam — the theme's signature moment
+    const motes = modeState.lampMotes;
+    if (motes && a > 0.05 && !reduced) {
+      const topHalf = 26, botHalf = W * 0.42;
+      for (const m of motes) {
+        m.fy += (m.sp * dt) / (1000 * H);
+        if (m.fy > 1) {
+          m.fy -= 1;
+          m.fx = Math.random() * 1.7 - 0.85;
+        }
+        const half = (topHalf + (botHalf - topHalf) * m.fy) * 0.85;
+        const x = W / 2 + (m.fx + 0.06 * Math.sin(t / 1000 * m.sw + m.ph)) * half;
+        const y = m.fy * H;
+        const tw = 0.55 + 0.45 * Math.sin(t / 1000 * m.w + m.ph);
+        ctx.fillStyle = rgba(LAMP_CORE, +(m.a * tw * a).toFixed(3));
+        ctx.fillRect(x, y, m.s, m.s);
+      }
+    }
+
     const lx = W / 2, ly = -10;
-    const warm = tintRGB([255, 196, 120], THEMES[themeKey]);
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, rgba(warm, 0.26 * flick));
-    g.addColorStop(0.55, rgba(warm, 0.10 * flick));
-    g.addColorStop(1, rgba(warm, 0.02 * flick));
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(lx - 26, ly);
-    ctx.lineTo(lx + 26, ly);
-    ctx.lineTo(lx + W * 0.34, H);
-    ctx.lineTo(lx - W * 0.34, H);
-    ctx.closePath();
-    ctx.fill();
     const rg = ctx.createRadialGradient(lx, ly + 24, 0, lx, ly + 24, 130);
-    rg.addColorStop(0, rgba([255, 240, 200], 0.85 * flick));
-    rg.addColorStop(1, rgba(warm, 0));
+    rg.addColorStop(0, rgba(LAMP_CORE, 0.8 * a * flick));
+    rg.addColorStop(1, rgba(cone, 0));
     ctx.fillStyle = rg;
     ctx.fillRect(lx - 140, ly - 116, 280, 280);
   }
@@ -720,6 +781,21 @@ const bgApi = (function background() {
   function buildModeExtras() {
     modeState = { meteor: null };
     if (bgMode === 'halftone') buildHalftoneSample();
+    if (bgMode === 'lamp') {
+      buildLamp();
+      // motes are seeded per mode-switch/resize; the cone rebuild in
+      // setPalette must not reset them mid-drift
+      modeState.lampMotes = Array.from({ length: 40 }, () => ({
+        fx: Math.random() * 1.7 - 0.85, // fraction of the beam's half-width
+        fy: Math.random(),
+        sp: 7 + Math.random() * 14,     // downward px/s
+        sw: 0.3 + Math.random() * 0.5,  // sway speed
+        w: 0.6 + Math.random() * 1.6,   // twinkle speed
+        ph: Math.random() * Math.PI * 2,
+        s: Math.random() < 0.8 ? 1 : 2, // square side
+        a: 0.12 + Math.random() * 0.22,
+      }));
+    }
     if (bgMode === 'shooting') {
       modeState.shootStars = Array.from({ length: 150 }, () => ({
         x: Math.random() * W,
@@ -808,6 +884,7 @@ const bgApi = (function background() {
       sunAt = nextSun;
       moonAt = nextMoon;
       buildColorCache();
+      if (bgMode === 'lamp') buildLamp();
       if (reduced) draw(0);
     },
     setTheme(key) {
