@@ -9,11 +9,13 @@ that arcs with the clock, and a centered search box with a **provider dropdown**
 Outside the extension the tab strip hides and autocomplete falls back to Google's JSONP
 endpoint (see the note below); everything else is identical.
 
-| Night | Morning |
+| **Night** | **Morning** |
 |---|---|
 | ![Night theme](docs/screenshots/night.png) | ![Morning theme](docs/screenshots/morning.png) |
 | **Day** | **Evening** |
 | ![Day theme](docs/screenshots/day.png) | ![Evening theme](docs/screenshots/evening.png) |
+| **Lamp at night** | **Themed surfaces — Cyberpunk at day** |
+| ![Lamp background](docs/screenshots/lamp.png) | ![Themed surfaces](docs/screenshots/themed.png) |
 
 Providers: **Google · DuckDuckGo · Perplexity**
 The choice is remembered (localStorage). `Enter` searches, `/` or `Ctrl+K` focuses the box.
@@ -45,11 +47,14 @@ in localStorage; pick **Auto** to return to the real clock.
 
 **Backgrounds:** the **Bg** row in settings switches the whole background style —
 **Scene** (the default pixel world), **Aurora** (drifting light blobs), **Grid**
-(clean graph paper), **Lamp** (warm light cone), **Noise** (film grain), **Particles**
+(clean graph paper), **Lamp** (warm light cone that follows the clock — a faint
+afterglow in the morning, full amber at night, dust motes in the beam), **Noise**
+(film grain), **Particles**
 (floating dust), **Retro** (synthwave perspective floor), **Shooting** (dense
 starfield with occasional meteors), **Grain** (vivid gradient with film grain) and
-**Halftone** (dot-matrix rendering). Every background is theme- and phase-aware, so
-Cyberpunk-Retro or Rose-Aurora look exactly like you'd hope.
+**Halftone** (dot-matrix rendering). Every background is theme- and phase-aware,
+so Cyberpunk-Retro or Rose-Aurora look exactly like you'd hope — the Lamp is
+phase-aware only: its warm light ignores the theme picker, like a real lamp would.
 
 **Wallpaper:** the **Wall** row lets you pick an image (stored locally in
 IndexedDB, never synced anywhere) and **Halftone** renders it as glowing
