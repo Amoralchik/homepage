@@ -67,6 +67,8 @@
       <span class="pill-seg" id="clock">--:--</span>
       <span class="pill-dot">·</span>
       <span class="pill-seg" id="date">&nbsp;</span>
+      <span class="pill-dot" id="wx-dot" hidden>·</span>
+      <span class="pill-seg" id="wx" hidden></span>
     </div>
     </div>
   </main>
@@ -144,6 +146,50 @@
         <button type="button" data-show="time">Time</button>
         <button type="button" data-show="help">Help</button>
         <button type="button" data-show="pulse">Pulse</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-name">Wx</span>
+      <div class="phase-opts" id="wx-opts" role="group" aria-label="Weather">
+        <button type="button" data-wx="on">On</button>
+        <button type="button" data-wx="off">Off</button>
+      </div>
+    </div>
+    <div class="set-row" id="wx-loc-row">
+      <span class="set-name">Loc</span>
+      <div class="phase-opts" id="wx-loc-opts" role="group" aria-label="Weather location">
+        <button type="button" data-wxloc="auto">Auto</button>
+        <button type="button" data-wxloc="pick" id="wx-pick-btn">Pick…</button>
+      </div>
+    </div>
+    <div class="set-row" id="wx-city-row" hidden>
+      <span class="set-name">City</span>
+      <input class="set-input" id="wx-city-input" type="text" maxlength="40" spellcheck="false"
+             autocomplete="off" placeholder="search city…" aria-label="Weather city search" />
+    </div>
+    <div class="wx-results" id="wx-city-results" hidden></div>
+    <div class="set-row" id="wx-sky-row">
+      <span class="set-name">Sky</span>
+      <div class="phase-opts" id="wx-sky-opts" role="group" aria-label="Weather conditions">
+        <button type="button" data-wxsky="auto">Auto</button>
+        <button type="button" data-wxsky="clear">Clear</button>
+        <button type="button" data-wxsky="clouds">Clouds</button>
+        <button type="button" data-wxsky="rain">Rain</button>
+        <button type="button" data-wxsky="snow">Snow</button>
+        <button type="button" data-wxsky="storm">Storm</button>
+        <button type="button" data-wxsky="fog">Fog</button>
+      </div>
+    </div>
+    <div class="set-row" id="wx-temp-row" hidden>
+      <span class="set-name">Temp</span>
+      <input class="set-input" id="wx-temp-input" type="number" step="any" inputmode="decimal"
+             aria-label="Pinned temperature" />
+    </div>
+    <div class="set-row" id="wx-units-row">
+      <span class="set-name">Units</span>
+      <div class="phase-opts" id="wx-units-opts" role="group" aria-label="Temperature units">
+        <button type="button" data-units="c">°C</button>
+        <button type="button" data-units="f">°F</button>
       </div>
     </div>
     <div class="set-row" id="tabs-row">

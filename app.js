@@ -89,6 +89,10 @@ const DayCycle = (() => {
       out[key] = lerpColor(a[key], b[key], k);
     }
     out.starA = lerp(a.starA, b.starA, k);
+    // star/sparklesOn are normally overwritten by tintPalette/applyDayCycle,
+    // but the engine's reduced-motion first draw runs on this raw palette
+    out.star = [150, 175, 255];
+    out.sparklesOn = true;
     out.sun = k < 0.5 ? a.sun : b.sun;
     out.moon = k < 0.5 ? a.moon : b.moon;
     return out;
@@ -400,6 +404,7 @@ const bgApi = (function background() {
 
     if (bgMode === 'scene') drawScene(t);
     else drawAltMode(t, dt);
+    drawWeather(t, dt);
   }
 
   function drawScene(t) {
@@ -853,6 +858,137 @@ const bgApi = (function background() {
     if (bgMode === 'aurora') modeState.auroraFor = null; // force color rebuild
   }
 
+  /* ---------- weather overlay (driven by ui via bgApi.setWeather) ----------
+     One layer over every background mode: rain streaks, drifting snow, pixel
+     clouds, mist blobs and lightning. Particles reseed only when the effect
+     or the viewport changes, then advance cheaply in the frame loop. */
+
+  const WX_FX_VALID = ['none', 'clear', 'clouds', 'fog', 'drizzle', 'rain', 'snow', 'storm'];
+  let wxFx = 'none';
+  let wxParts = [], wxClouds = [], wxFogs = [];
+  let wxFlash = 0, wxNextFlash = 0;
+
+  // crisp pixel-cloud sprite: rows of squares, narrow on top, ragged edges
+  function buildCloudSprite() {
+    const cell = 5;
+    const cw = 10 + Math.floor(Math.random() * 9);
+    const ch = 4 + Math.floor(Math.random() * 3);
+    const off = document.createElement('canvas');
+    off.width = cw * cell;
+    off.height = ch * cell;
+    const c2 = off.getContext('2d');
+    c2.fillStyle = '#ffffff';
+    for (let y = 0; y < ch; y++) {
+      const inset = Math.round((1 - y / (ch - 1)) * cw * 0.3);
+      const x0 = inset + (Math.random() < 0.5 ? 0 : 1);
+      const x1 = cw - inset - (Math.random() < 0.5 ? 0 : 1);
+      for (let x = x0; x < x1; x++) {
+        if (Math.random() < 0.12) continue;
+        c2.fillRect(x * cell, y * cell, cell, cell);
+      }
+    }
+    return off;
+  }
+
+  function buildWeather() {
+    wxParts = []; wxClouds = []; wxFogs = []; wxFlash = 0;
+    const scale = (W * H) / 921600; // seed density tracks the viewport (720p = 1)
+    if (wxFx === 'rain' || wxFx === 'storm' || wxFx === 'drizzle') {
+      const count = Math.round(scale * (wxFx === 'drizzle' ? 70 : wxFx === 'storm' ? 150 : 105));
+      for (let i = 0; i < count; i++) wxParts.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        len: wxFx === 'drizzle' ? 2 + Math.random() * 3 : wxFx === 'storm' ? 6 + Math.random() * 6 : 4 + Math.random() * 5,
+        sp: wxFx === 'drizzle' ? 340 + Math.random() * 140 : 520 + Math.random() * (wxFx === 'storm' ? 260 : 160),
+        a: 0.14 + Math.random() * 0.22,
+      });
+    } else if (wxFx === 'snow') {
+      const count = Math.round(scale * 85);
+      for (let i = 0; i < count; i++) wxParts.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        s: Math.random() < 0.72 ? 1 : 2,
+        sp: 22 + Math.random() * 40,
+        sw: 6 + Math.random() * 16,
+        w: 0.3 + Math.random() * 0.9,
+        ph: Math.random() * Math.PI * 2,
+        a: 0.3 + Math.random() * 0.4,
+      });
+    } else if (wxFx === 'clouds') {
+      for (let i = 0; i < 6; i++) wxClouds.push({
+        img: buildCloudSprite(),
+        x: Math.random() * W,
+        y: Math.random() * H * 0.45,
+        sp: 4 + Math.random() * 9,
+        a: 0.05 + Math.random() * 0.05,
+      });
+    } else if (wxFx === 'fog') {
+      for (let i = 0; i < 10; i++) wxFogs.push({
+        x0: Math.random() * (W + 400),
+        y: H * (0.15 + Math.random() * 0.75),
+        r: 160 + Math.random() * 240,
+        sp: (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 9),
+        a: 0.05 + Math.random() * 0.06,
+      });
+    }
+    if (wxFx === 'storm') wxNextFlash = performance.now() + 2000 + Math.random() * 3000;
+  }
+
+  function drawWeather(t, dt) {
+    if (wxFx === 'none' || wxFx === 'clear') return;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (wxFx === 'rain' || wxFx === 'storm' || wxFx === 'drizzle') {
+      const wind = wxFx === 'storm' ? 90 : 45;
+      for (const p of wxParts) {
+        p.y += (p.sp * dt) / 1000;
+        p.x += (wind * dt) / 1000;
+        if (p.y > H + 12) { p.y = -12 - Math.random() * 60; p.x = Math.random() * (W + 100) - 50; }
+        if (p.x > W + 12) p.x -= W + 24;
+        ctx.fillStyle = rgba(pal.star, p.a);
+        ctx.fillRect(p.x, p.y, 1, p.len);
+      }
+    } else if (wxFx === 'snow') {
+      for (const p of wxParts) {
+        p.y += (p.sp * dt) / 1000;
+        if (p.y > H + 4) { p.y = -4; p.x = Math.random() * W; }
+        const sway = Math.sin(t / 1000 * p.w + p.ph) * p.sw;
+        ctx.fillStyle = rgba(pal.star, p.a);
+        ctx.fillRect(p.x + sway, p.y, p.s, p.s);
+      }
+    } else if (wxFx === 'clouds') {
+      for (const c of wxClouds) {
+        c.x += (c.sp * dt) / 1000;
+        if (c.x > W + 10) c.x = -c.img.width - Math.random() * 80;
+        ctx.globalAlpha = c.a;
+        ctx.drawImage(c.img, Math.round(c.x), Math.round(c.y));
+      }
+      ctx.globalAlpha = 1;
+    } else if (wxFx === 'fog') {
+      const span = W + 400;
+      for (const b of wxFogs) {
+        const x = (((b.x0 + (t / 1000) * b.sp) % span) + span) % span - 200;
+        const g = ctx.createRadialGradient(x, b.y, 20, x, b.y, b.r);
+        g.addColorStop(0, rgba(pal.star, b.a));
+        g.addColorStop(1, rgba(pal.star, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+      }
+    }
+    if (wxFx === 'storm') {
+      if (t >= wxNextFlash) {
+        wxFlash = 0.9;
+        wxNextFlash = t + 3200 + Math.random() * 5200;
+      }
+      if (wxFlash > 0) {
+        wxFlash = Math.max(0, wxFlash - (dt / 1000) * 3.2);
+        ctx.fillStyle = rgba([255, 255, 255], Math.min(0.3, wxFlash * 0.32));
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+    ctx.restore();
+  }
+
   let raf = null, last = 0;
   function frame(now) {
     const dt = Math.min(now - last, 100);
@@ -893,6 +1029,7 @@ const bgApi = (function background() {
     buildStars();
     buildCelestial();
     buildModeExtras();
+    buildWeather();
     buildColorCache();
     start();
   }
@@ -932,6 +1069,13 @@ const bgApi = (function background() {
       if (n === dotSize) return;
       dotSize = n;
       if (bgMode === 'halftone') buildHalftoneSample();
+      if (reduced) draw(0);
+    },
+    setWeather(fx) {
+      if (!WX_FX_VALID.includes(fx)) fx = 'none';
+      if (fx === wxFx) return;
+      wxFx = fx;
+      buildWeather();
       if (reduced) draw(0);
     },
   };
@@ -2325,4 +2469,506 @@ const bgApi = (function background() {
   }
   tick();
   setInterval(tick, 1000);
+
+  /* ---------- weather pill (open-meteo, keyless) ---------- */
+
+  // current conditions next to the clock: auto location (browser GPS, then
+  // IP city) or a hand-picked city, °C/°F — restyled in every theme by the
+  // pill variables, the icon is a pixel bitmap drawn in currentColor
+  const wxSeg = document.getElementById('wx');
+  const wxDot = document.getElementById('wx-dot');
+  const wxOpts = document.getElementById('wx-opts');
+  const wxLocRow = document.getElementById('wx-loc-row');
+  const wxLocOpts = document.getElementById('wx-loc-opts');
+  const wxPickBtn = document.getElementById('wx-pick-btn');
+  const wxCityRow = document.getElementById('wx-city-row');
+  const wxCityInput = document.getElementById('wx-city-input');
+  const wxCityResults = document.getElementById('wx-city-results');
+  const wxUnitsRow = document.getElementById('wx-units-row');
+  const wxUnitsOpts = document.getElementById('wx-units-opts');
+  const wxSkyRow = document.getElementById('wx-sky-row');
+  const wxSkyOpts = document.getElementById('wx-sky-opts');
+  const wxTempRow = document.getElementById('wx-temp-row');
+  const wxTempInput = document.getElementById('wx-temp-input');
+
+  const WX_STALE_MS = 10 * 60 * 1000;           // refetch readings older than 10 min
+  const WX_COORDS_TTL_MS = 24 * 60 * 60 * 1000; // re-resolve auto coords daily
+  let wxBusy = false;
+  let wxQueued = null; // a refresh swallowed while busy is rerun when it frees
+
+  const WX_ICONS = {
+    sun: [
+      '.....#.....',
+      '.#...#...#.',
+      '....###....',
+      '...#####...',
+      '#..#####..#',
+      '#.#######.#',
+      '#..#####..#',
+      '...#####...',
+      '....###....',
+      '.#...#...#.',
+      '.....#.....',
+    ],
+    moon: [
+      '....###....',
+      '..#####....',
+      '..###......',
+      '.###.......',
+      '.###.......',
+      '.###.......',
+      '.###.......',
+      '.###.......',
+      '..###......',
+      '..#####....',
+      '....###....',
+    ],
+    cloudsun: [
+      '......###..',
+      '.....#####.',
+      '......###..',
+      '...........',
+      '...####....',
+      '.#######...',
+      '#########..',
+      '#########..',
+      '#########..',
+      '...........',
+      '...........',
+    ],
+    cloudmoon: [
+      '......###..',
+      '.....##....',
+      '.....#.....',
+      '...........',
+      '...####....',
+      '.#######...',
+      '#########..',
+      '#########..',
+      '#########..',
+      '...........',
+      '...........',
+    ],
+    cloud: [
+      '...........',
+      '...........',
+      '....####...',
+      '..#######..',
+      '.#########.',
+      '###########',
+      '###########',
+      '...........',
+      '...........',
+      '...........',
+      '...........',
+    ],
+    fog: [
+      '....####...',
+      '..#######..',
+      '.#########.',
+      '###########',
+      '...........',
+      '..#######..',
+      '...........',
+      '....####...',
+      '...........',
+      '...........',
+      '...........',
+    ],
+    drizzle: [
+      '....####...',
+      '..#######..',
+      '.#########.',
+      '###########',
+      '...........',
+      '..#..#..#..',
+      '...........',
+      '...#..#..#.',
+      '...........',
+      '..#..#..#..',
+      '...........',
+    ],
+    rain: [
+      '....####...',
+      '..#######..',
+      '.#########.',
+      '###########',
+      '...........',
+      '.#..#..#...',
+      '.#..#..#...',
+      '...........',
+      '.#..#..#...',
+      '.#..#..#...',
+      '...........',
+    ],
+    snow: [
+      '....####...',
+      '..#######..',
+      '.#########.',
+      '###########',
+      '...........',
+      '.#...#...#.',
+      '...........',
+      '...#...#...',
+      '...........',
+      '.#...#...#.',
+      '...........',
+    ],
+    thunder: [
+      '....####...',
+      '..#######..',
+      '.#########.',
+      '###########',
+      '....#......',
+      '...##......',
+      '..######...',
+      '.....##....',
+      '....##.....',
+      '...##......',
+      '...........',
+    ],
+  };
+
+  // WMO weather codes → label + icon (is_day picks the sun/moon variant)
+  function wxDescribe(code, isDay) {
+    if (code === 0) return { icon: isDay ? 'sun' : 'moon', label: 'Clear sky' };
+    if (code === 1) return { icon: isDay ? 'sun' : 'moon', label: 'Mainly clear' };
+    if (code === 2) return { icon: isDay ? 'cloudsun' : 'cloudmoon', label: 'Partly cloudy' };
+    if (code === 3) return { icon: 'cloud', label: 'Overcast' };
+    if (code === 45 || code === 48) return { icon: 'fog', label: 'Fog' };
+    if (code >= 51 && code <= 57) return { icon: 'drizzle', label: 'Drizzle' };
+    if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) {
+      return { icon: 'rain', label: code >= 80 ? 'Rain showers' : 'Rain' };
+    }
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: 'snow', label: 'Snow' };
+    if (code >= 95) return { icon: 'thunder', label: 'Thunderstorm' };
+    return { icon: 'cloud', label: 'Cloudy' };
+  }
+
+  // pinned conditions — the display analog of freezing the time of day
+  const WX_MANUAL = {
+    clear:  { icon: 'sun', night: 'moon', label: 'Clear' },
+    clouds: { icon: 'cloudsun', night: 'cloudmoon', label: 'Partly cloudy' },
+    rain:   { icon: 'rain', label: 'Rain' },
+    snow:   { icon: 'snow', label: 'Snow' },
+    storm:  { icon: 'thunder', label: 'Thunderstorm' },
+    fog:    { icon: 'fog', label: 'Fog' },
+  };
+
+  function wxCondKey() {
+    const c = loadStored('home:wxCond');
+    return WX_MANUAL[c] ? c : 'auto';
+  }
+
+  function wxManualTempC() {
+    const v = parseFloat(loadStored('home:wxTemp'));
+    return isFinite(v) ? v : null;
+  }
+
+  // live WMO code → background effect key (pinned keys already match)
+  function wxEffectFromCode(code) {
+    if (code === 0 || code === 1) return 'clear';
+    if (code === 2 || code === 3) return 'clouds';
+    if (code === 45 || code === 48) return 'fog';
+    if (code >= 51 && code <= 57) return 'drizzle';
+    if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return 'rain';
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+    if (code >= 95) return 'storm';
+    return 'clear';
+  }
+
+  function wxEffect() {
+    if (!wxOn()) return 'none';
+    const cond = wxCondKey();
+    if (cond !== 'auto') return cond; // clear/clouds/rain/snow/storm/fog are the fx keys
+    const c = wxCache();
+    return c ? wxEffectFromCode(c.code) : 'none';
+  }
+
+  const wxOn = () => loadStored('home:wxMode') !== 'off';
+  const wxUnits = () => (loadStored('home:wxUnits') === 'f' ? 'f' : 'c');
+
+  function wxManual() {
+    try {
+      const v = JSON.parse(loadStored('home:wxLoc'));
+      return v && isFinite(v.lat) && isFinite(v.lon) ? v : null;
+    } catch (e) { return null; }
+  }
+  function wxCache() {
+    try {
+      const v = JSON.parse(loadStored('home:wx'));
+      return v && typeof v === 'object' ? v : null;
+    } catch (e) { return null; }
+  }
+  function wxSaveCache(c) { store('home:wx', JSON.stringify(c)); }
+
+  function wxTemp(c) { return wxUnits() === 'f' ? Math.round(c * 9 / 5 + 32) : Math.round(c); }
+
+  // one paint path for live and pinned weather alike: icon bitmap + temp
+  function wxPaint(icon, tempC, title) {
+    let path = '';
+    for (const [y, row] of WX_ICONS[icon].entries()) {
+      for (let x = 0; x < row.length; x++) if (row[x] === '#') path += `M${x} ${y}h1v1h-1z`;
+    }
+    const temp = tempC === null ? '' : ` ${wxTemp(tempC)}°`;
+    wxSeg.innerHTML =
+      `<svg width="11" height="11" viewBox="0 0 11 11" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>` +
+      temp;
+    wxSeg.title = title;
+    wxSeg.hidden = false;
+    wxDot.hidden = false;
+  }
+
+  function wxRender(c) {
+    const d = wxDescribe(c.code, c.isDay);
+    const updated = new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    wxPaint(d.icon, c.tempC,
+      `${d.label} · feels ${wxTemp(c.feelsC)}° · wind ${Math.round(c.wind)} km/h · ${c.place || 'your location'} · updated ${updated}`);
+  }
+
+  function wxRenderManual(cond) {
+    const m = WX_MANUAL[cond];
+    // sun/moon variant follows the page phase — a frozen Night phase pins the
+    // moon icon, matching how the celestial body behaves
+    const phase = DayCycle.current(new Date(), forcedPhase()).name;
+    const icon = m.night && (phase === 'evening' || phase === 'night') ? m.night : m.icon;
+    wxPaint(icon, wxManualTempC(), `${m.label} · pinned — set in Settings (Sky)`);
+  }
+
+  // the single decision point for what the pill shows right now
+  function wxPaintCurrent() {
+    if (!wxOn()) { wxHide(); bgApi.setWeather('none'); return; }
+    const cond = wxCondKey();
+    if (cond !== 'auto') { wxRenderManual(cond); bgApi.setWeather(cond); return; }
+    const c = wxCache();
+    if (c) { wxRender(c); bgApi.setWeather(wxEffectFromCode(c.code)); }
+    else { wxHide(); bgApi.setWeather('none'); }
+  }
+
+  function wxHide() {
+    wxSeg.hidden = true;
+    wxDot.hidden = true;
+  }
+
+  async function wxGeo() {
+    if (!navigator.geolocation) throw new Error('geolocation unavailable');
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        p => resolve({ lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3), place: null }),
+        reject,
+        { timeout: 8000, maximumAge: 10 * 60 * 1000 }
+      );
+    });
+  }
+
+  async function wxIp() {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const res = await fetch('https://ipwho.is/', { signal: ctrl.signal });
+      const j = await res.json();
+      if (!j || j.success === false || !isFinite(j.latitude) || !isFinite(j.longitude)) throw new Error('ip locate failed');
+      return { lat: +Number(j.latitude).toFixed(3), lon: +Number(j.longitude).toFixed(3), place: j.city || null };
+    } finally { clearTimeout(timer); }
+  }
+
+  async function wxLocate() {
+    const manual = wxManual();
+    if (manual) return { ...manual, place: manual.name, manual: true };
+    // reuse the coords stored with the last auto reading for a day — a fresh
+    // GPS/IP fix on every new tab would be wasteful
+    const c = wxCache();
+    if (c && c.auto && Date.now() - c.ts < WX_COORDS_TTL_MS && isFinite(c.lat)) {
+      return { lat: c.lat, lon: c.lon, place: c.place };
+    }
+    try { return { ...(await wxGeo()), auto: true }; }
+    catch (e) {
+      try { return { ...(await wxIp()), auto: true }; }
+      catch (e2) { return null; }
+    }
+  }
+
+  async function wxFetch(loc) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + loc.lat + '&longitude=' + loc.lon +
+        '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,is_day&timezone=auto';
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) return null;
+      const j = await res.json();
+      const cur = j && j.current;
+      if (!cur || !isFinite(cur.temperature_2m)) return null;
+      const prev = wxCache();
+      return {
+        ts: Date.now(),
+        tempC: cur.temperature_2m,
+        feelsC: isFinite(cur.apparent_temperature) ? cur.apparent_temperature : cur.temperature_2m,
+        wind: isFinite(cur.wind_speed_10m) ? cur.wind_speed_10m : 0,
+        code: cur.weather_code || 0,
+        isDay: !!cur.is_day,
+        lat: loc.lat,
+        lon: loc.lon,
+        auto: !loc.manual,
+        place: loc.place || (prev && prev.place) || null,
+      };
+    } catch (e) { return null; }
+    finally { clearTimeout(timer); }
+  }
+
+  async function wxRefresh(force) {
+    // pinned weather never hits the network
+    if (!wxOn() || wxCondKey() !== 'auto') return;
+    if (wxBusy) { wxQueued = wxQueued || force; return; }
+    const cached = wxCache();
+    if (!force && cached && Date.now() - cached.ts < WX_STALE_MS) { wxRender(cached); return; }
+    wxBusy = true;
+    try {
+      const loc = await wxLocate();
+      const fresh = loc ? await wxFetch(loc) : null;
+      if (fresh) { wxSaveCache(fresh); wxRender(fresh); bgApi.setWeather(wxEffectFromCode(fresh.code)); }
+      else if (cached) { wxRender(cached); bgApi.setWeather(wxEffectFromCode(cached.code)); } // keep the last reading on failure
+      else { wxHide(); bgApi.setWeather('none'); }
+    } finally {
+      wxBusy = false;
+      if (wxQueued !== null) { const f = wxQueued; wxQueued = null; wxRefresh(f); }
+    }
+  }
+
+  // paint instantly (pinned weather or the last reading, any age), then refresh if stale
+  wxPaintCurrent();
+  wxRefresh(false);
+  setInterval(() => { if (!document.hidden) wxRefresh(false); }, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wxRefresh(false); });
+
+  // settings: on/off, auto/manual location, °C/°F — same button-row pattern
+  // as phase/theme/show
+  function wxRenderOpts() {
+    const on = wxOn();
+    for (const b of wxOpts.children) b.classList.toggle('active', (b.dataset.wx === 'on') === on);
+    wxLocRow.hidden = !on;
+    wxUnitsRow.hidden = !on;
+    wxSkyRow.hidden = !on;
+    if (!on) { wxCityRow.hidden = true; wxCityResults.hidden = true; }
+    const manual = wxManual();
+    wxPickBtn.textContent = manual ? manual.name : 'Pick…';
+    for (const b of wxLocOpts.children) {
+      b.classList.toggle('active', manual ? b.dataset.wxloc === 'pick' : b.dataset.wxloc === 'auto');
+    }
+    const cond = wxCondKey();
+    for (const b of wxSkyOpts.children) b.classList.toggle('active', b.dataset.wxsky === cond);
+    wxTempRow.hidden = !on || cond === 'auto';
+    if (cond !== 'auto' && document.activeElement !== wxTempInput) {
+      const t = wxManualTempC() ?? (wxCache() ? wxCache().tempC : 10);
+      wxTempInput.value = Math.round(wxUnits() === 'f' ? t * 9 / 5 + 32 : t);
+    }
+    const u = wxUnits();
+    for (const b of wxUnitsOpts.children) b.classList.toggle('active', b.dataset.units === u);
+  }
+
+  wxOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-wx]');
+    if (!b) return;
+    store('home:wxMode', b.dataset.wx);
+    wxRenderOpts();
+    wxPaintCurrent();
+    if (wxOn()) wxRefresh(true);
+  });
+
+  wxLocOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-wxloc]');
+    if (!b) return;
+    if (b.dataset.wxloc === 'auto') {
+      store('home:wxLoc', 'auto');
+      wxCityRow.hidden = true;
+      wxCityResults.hidden = true;
+      wxRenderOpts();
+      wxRefresh(true);
+    } else {
+      wxCityRow.hidden = false;
+      wxCityInput.focus();
+      wxRenderOpts();
+    }
+  });
+
+  let wxSearchId = 0;
+  let wxDebounce = 0;
+  wxCityInput.addEventListener('input', () => {
+    clearTimeout(wxDebounce);
+    const q = wxCityInput.value.trim();
+    if (q.length < 3) { wxCityResults.hidden = true; wxCityResults.innerHTML = ''; return; }
+    wxDebounce = setTimeout(() => wxSearchCities(q), 300);
+  });
+  wxCityInput.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      wxCityRow.hidden = true;
+      wxCityResults.hidden = true;
+      wxCityInput.value = '';
+    }
+  });
+
+  async function wxSearchCities(q) {
+    const id = ++wxSearchId;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(q) + '&count=5&language=en&format=json';
+      const res = await fetch(url, { signal: ctrl.signal });
+      const j = await res.json();
+      if (id !== wxSearchId) return; // a newer keystroke superseded this search
+      wxCityResults.innerHTML = '';
+      for (const r of (j.results || [])) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = [r.name, r.admin1, r.country].filter(Boolean).join(' · ');
+        b.addEventListener('click', () => {
+          store('home:wxLoc', JSON.stringify({
+            name: r.name,
+            lat: +Number(r.latitude).toFixed(3),
+            lon: +Number(r.longitude).toFixed(3),
+          }));
+          wxCityInput.value = '';
+          wxCityRow.hidden = true;
+          wxCityResults.hidden = true;
+          wxRenderOpts();
+          wxRefresh(true);
+        });
+        wxCityResults.appendChild(b);
+      }
+      wxCityResults.hidden = !wxCityResults.children.length;
+    } catch (e) {
+      if (id === wxSearchId) wxCityResults.hidden = true;
+    } finally { clearTimeout(timer); }
+  }
+
+  wxSkyOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-wxsky]');
+    if (!b) return;
+    store('home:wxCond', b.dataset.wxsky);
+    // seed the pinned temp from the last reading so the pill is complete at once
+    if (b.dataset.wxsky !== 'auto' && wxManualTempC() === null) {
+      const c = wxCache();
+      store('home:wxTemp', String(c ? c.tempC : 10));
+    }
+    wxRenderOpts();
+    wxPaintCurrent();
+    if (b.dataset.wxsky === 'auto') wxRefresh(false);
+  });
+
+  wxTempInput.addEventListener('input', () => {
+    const v = parseFloat(wxTempInput.value);
+    if (!isFinite(v)) return;
+    store('home:wxTemp', String(wxUnits() === 'f' ? (v - 32) * 5 / 9 : v));
+    wxPaintCurrent();
+  });
+
+  wxUnitsOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-units]');
+    if (!b) return;
+    store('home:wxUnits', b.dataset.units);
+    wxRenderOpts();
+    wxPaintCurrent(); // converting needs no refetch
+  });
+
+  wxRenderOpts();
 })();

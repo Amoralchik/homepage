@@ -166,5 +166,41 @@ dark for a "white" theme — the night palette is so dark (5–12% luminance)
 that a multiplier can't lift it without blowing out morning/day. Bright now
 has `liftByPhase` (night 0.38, evening 0.32, morning 0.08, day 0.05):
 `tintRGB` pulls luminance toward white by that fraction (`l += (100-l)*lift`),
-and `tintPalette` blends the phase-keyed lift across phase edges with the same `k` used
+and `tintPalette` blends the lift across phase edges with the same `k` used
 for colors. Multipliers stay at lum 1.2.
+
+---
+
+# 5. Weather Pill Segment (2026-10-27)
+
+**Feature:** current-conditions readout inside the clock pill
+(`home / 22:45 · Tue 27 · ☀ 12°`), fetched from Open-Meteo with auto
+(browser GPS → IP city) or hand-picked location.
+
+**Theming decision:** the segment owns no colors of its own. Its glass,
+border and text come from the existing `--pill-bg/-border/-text` variables,
+and the condition icon is a pixel bitmap rendered as a single SVG path in
+`currentColor` — so all 9 themes × 4 phases style it automatically, and any
+future theme gets it for free just by defining an accent (§2 surface accord).
+
+**Icons:** ten hand-drawn 11×11 bitmaps (`WX_ICONS` in `app.js` — sun, moon,
+cloud-sun, cloud-moon, cloud, fog, drizzle, rain, snow, thunder) drawn with
+`shape-rendering="crispEdges"` to sit next to Silkscreen text. The day/night
+variant follows Open-Meteo's `is_day` *at the location*, not the viewer's
+clock — the icon shows what that sky looks like. The one exception: pinned
+weather (the Sky row) follows the *page phase* instead, so a frozen Night
+phase pins the moon — the display override matches how the celestial body
+behaves.
+
+**Background layer:** the same condition also renders over *every* background
+mode — one `drawWeather()` pass after the mode's draw, tinted by `pal.star`
+so themes recolor it for free (rain/snow/fog), white pixel-cloud sprites, and
+a white flash overlay for storms. Particles reseed only on effect/viewport
+change (`buildWeather`, called from `resize` and `bgApi.setWeather`) and
+advance in the frame loop; under `prefers-reduced-motion` they rest at their
+seeded positions. The ui side owns the mapping (`wxEffect()`: Wx Off → none,
+pinned cond → its own key, live → `wxEffectFromCode`) and pushes it through
+`bgApi.setWeather` whenever the pill repaints.
+
+**Known limitation:** the Show → Time toggle hides the whole pill, weather
+included — the segment rides along rather than owning its own Show entry.

@@ -627,6 +627,9 @@ body.no-pulse .search {
 
 .pill-slash, .pill-dot { color: var(--pill-dim); }
 
+/* weather segment: pixel icon follows the pill text color in every theme */
+#wx svg { display: inline-block; vertical-align: -1px; margin-right: 5px; }
+
 /* ---------- tab strip (middle top) ---------- */
 
 .tab-strip {
@@ -901,6 +904,30 @@ body.no-tabs .tab-strip { display: none; }
   border-color: var(--border-strong);
   color: var(--text);
 }
+
+/* the hidden attribute must win over .set-row's display:flex */
+[hidden] { display: none !important; }
+
+/* weather: city search results + row spacing around the interposed list */
+#wx-units-row, #wx-sky-row { margin-top: 12px; }
+.wx-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0 58px;
+}
+.wx-results button {
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--key-border);
+  background: var(--key-bg);
+  color: var(--key-fg);
+  font: 500 11.5px/1.2 "Inter", system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.wx-results button:hover { color: var(--text); border-color: var(--border-strong); }
 
 /* ---------- mod layer (widgets) ---------- */
 
