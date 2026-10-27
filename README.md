@@ -70,14 +70,36 @@ the search input, the time pill, the help dock, and the **pulsing border** on th
 search box — for a completely custom minimal (or maximal) layout. Toggles persist
 like everything else.
 
-**Tab strip:** the **Tabs** row pins a line of tabs to the middle top of the page.
-**Recent** lists the tabs you had open last (across all windows) — clicking one
-focuses that exact tab; **Most used** lists your top sites, ranked by a tiny
-background tracker that counts tab activations and page loads. Clicking a most-used
-site focuses its tab if it's open right now, otherwise opens it in place. Both modes
-stay live (the strip refreshes every few seconds) and fall back to letter chips when
-a favicon is missing. Outside the extension the strip is unavailable and the row
-disappears.
+**Weather:** a small readout in the time pill — pixel weather icon + temperature —
+powered by [Open-Meteo](https://open-meteo.com) (free, no API key, no account).
+The **Wx** row turns it off entirely; **Loc** picks the location: **Auto** asks the
+browser for your coordinates and, if you decline or it's unavailable, silently falls
+back to a coarse IP-based city lookup, while **Pick…** searches Open-Meteo's city
+index so you can pin any place by hand. Hover the readout for the condition,
+feels-like temperature, wind and the place it's using; **Units** switches °C/°F.
+Or pin the weather itself, exactly like freezing the time of day: the **Sky** row
+freezes the condition (Clear, Clouds, Rain, Snow, Storm, Fog) and **Temp** sets the
+number — the sun/moon icon variant even follows the frozen phase. And the weather
+plays out in the scenery: every background style (Scene, Aurora, Grid, Lamp, …)
+gets the current or pinned conditions on top — falling rain streaks with wind,
+drifting snow, pixel clouds, misty fog banks and lightning flashes during storms.
+Turning weather off (or pinning Clear) clears the sky. Readings refresh
+every 10 minutes while the tab is visible, and the last one is cached so the pill
+fills in instantly on every new tab. It works on the hosted demo too — the weather
+APIs are CORS-open.
+
+**Quick bar:** the **Bar** row pins a line of shortcuts to the middle top of the page.
+**Recent** lists the tabs you had open last (across all windows) — clicking one focuses
+that exact tab; **Most used** lists your top sites, ranked by a tiny background tracker
+that counts tab activations and page loads — clicking one focuses the site's tab if
+it's open right now, otherwise opens it in place; **Bookmarks** mirrors your bookmarks
+bar (or your newest bookmarks if the bar is empty) — clicking one opens the site,
+focusing its tab when it's already open. Folders stay folders: they render as their own
+chips with a ▾ dropdown listing everything inside. The bar shows whatever fits the line
+and tucks the rest into a "··· more" chip; folder rows in any menu drill in with a back
+row on top. Bookmark chips borrow favicons the usage tracker has already seen, menus
+scroll with a slim custom scrollbar, and missing favicons fall back to letter chips.
+Outside the extension the bar is unavailable and the row disappears.
 
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
@@ -114,9 +136,14 @@ anytime with `?phase=morning` / `day` / `evening` / `night` in the URL (or set
 3. Click **Load unpacked** and select this folder
 4. Open a new tab — done.
 
-The extension asks for the `tabs` and `storage` permissions — `tabs` is what lets the
-tab strip list (Chrome shows this as "Read your browsing activity"); the data never
-leaves your machine.
+The extension asks for the `tabs`, `storage`, `bookmarks` and `geolocation`
+permissions — `tabs` feeds the quick bar's Recent mode (Chrome shows this as
+"Read your browsing activity"), `bookmarks` feeds its Bookmarks mode, and
+`geolocation` is only touched by the weather readout when its location is set to
+**Auto** (decline the prompt and it falls back to an IP city lookup, or pin a city
+manually). All data stays on your machine; the only network calls weather makes
+are to Open-Meteo (forecast + city search) and ipwho.is (fallback IP lookup) —
+no telemetry, no accounts.
 
 ## Or set it as the Home / startup page
 

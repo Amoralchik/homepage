@@ -130,33 +130,33 @@ body[data-phase="evening"] {
    the theme hue wins ties. Works on dark and light phases alike. */
 
 body[data-theme="dark"] {
-  --accent: #6d82ad;
-  --border: rgba(110, 132, 175, 0.30);
-  --pill-border: rgba(110, 132, 175, 0.28);
-  --border-strong: rgba(110, 132, 175, 0.45);
-  --glow: rgba(90, 110, 160, 0.16);
-  --glow-strong: rgba(90, 110, 160, 0.30);
-  --sel: rgba(90, 111, 150, 0.35);
-  --chip-fg: #7c90b8;
-  --key-fg: #7c90b8;
-  --submit-bg: #2c3a5c;
-  --submit-bg-hover: #384873;
-  --submit-fg: #c9d4ea;
+  --accent: #989898;
+  --border: rgba(130, 130, 130, 0.30);
+  --pill-border: rgba(130, 130, 130, 0.28);
+  --border-strong: rgba(130, 130, 130, 0.45);
+  --glow: rgba(120, 120, 120, 0.16);
+  --glow-strong: rgba(120, 120, 120, 0.30);
+  --sel: rgba(140, 140, 140, 0.35);
+  --chip-fg: #a8a8a8;
+  --key-fg: #9a9a9a;
+  --submit-bg: #3d3d3d;
+  --submit-bg-hover: #4d4d4d;
+  --submit-fg: #e8e8e8;
 }
 
 body[data-theme="bright"] {
-  --accent: #8aa4d9;
-  --border: rgba(140, 164, 217, 0.28);
-  --pill-border: rgba(140, 164, 217, 0.30);
-  --border-strong: rgba(140, 164, 217, 0.55);
-  --glow: rgba(220, 235, 255, 0.22);
-  --glow-strong: rgba(220, 235, 255, 0.38);
-  --sel: rgba(176, 196, 234, 0.40);
-  --chip-fg: #6d82ad;
-  --key-fg: #5c74a3;
-  --submit-bg: #42598f;
-  --submit-bg-hover: #50689f;
-  --submit-fg: #eef2ff;
+  --accent: #8f8f8f;
+  --border: rgba(110, 110, 110, 0.28);
+  --pill-border: rgba(110, 110, 110, 0.30);
+  --border-strong: rgba(110, 110, 110, 0.55);
+  --glow: rgba(235, 235, 235, 0.22);
+  --glow-strong: rgba(235, 235, 235, 0.38);
+  --sel: rgba(160, 160, 160, 0.40);
+  --chip-fg: #5f5f5f;
+  --key-fg: #5a5a5a;
+  --submit-bg: #4a4a4a;
+  --submit-bg-hover: #5c5c5c;
+  --submit-fg: #f2f2f2;
 }
 
 body[data-theme="cyberpunk"] {
@@ -265,6 +265,20 @@ body[data-theme="blue"], body[data-theme="rose"] {
   --edge: color-mix(in srgb, var(--edge-base) 85%, var(--accent));
   --hover: color-mix(in srgb, var(--hover-base) 82%, rgb(from var(--accent) r g b / 0.13));
   --chip-bg: color-mix(in srgb, var(--chip-bg-base) 82%, rgb(from var(--accent) r g b / 0.16));
+}
+
+/* the monochrome pair needs more than a gray accent: the phase glass itself
+   (navy at night, maroon at evening) must drain toward neutral. Relative-color
+   syntax zeroes each surface's saturation while keeping its own lightness and
+   alpha — dark glass stays dark, white glass stays white. */
+body[data-theme="dark"], body[data-theme="bright"] {
+  --panel: hsl(from var(--panel-base) h 0% l / alpha);
+  --suggest-bg: hsl(from var(--suggest-bg-base) h 0% l / alpha);
+  --pill-bg: hsl(from var(--pill-bg-base) h 0% l / alpha);
+  --key-bg: hsl(from var(--key-bg-base) h 0% l / alpha);
+  --edge: hsl(from var(--edge-base) h 0% l / alpha);
+  --hover: hsl(from var(--hover-base) h 0% l / alpha);
+  --chip-bg: hsl(from var(--chip-bg-base) h 0% l / alpha);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -613,6 +627,9 @@ body.no-pulse .search {
 
 .pill-slash, .pill-dot { color: var(--pill-dim); }
 
+/* weather segment: pixel icon follows the pill text color in every theme */
+#wx svg { display: inline-block; vertical-align: -1px; margin-right: 5px; }
+
 /* ---------- tab strip (middle top) ---------- */
 
 .tab-strip {
@@ -623,7 +640,7 @@ body.no-pulse .search {
   display: none;
   align-items: center;
   gap: 4px;
-  max-width: min(86vw, 920px);
+  max-width: min(92vw, 1100px);
   padding: 5px;
   border-radius: 12px;
   border: 1px solid var(--pill-border);
@@ -640,6 +657,8 @@ body.no-pulse .search {
 body.no-tabs .tab-strip { display: none; }
 
 .tab-chip {
+  position: relative;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -657,6 +676,75 @@ body.no-tabs .tab-strip { display: none; }
 
 .tab-chip:hover { background: var(--hover); color: var(--text); }
 .tab-chip:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 1px; }
+
+.tab-caret { flex: none; display: grid; place-items: center; color: var(--text-3); }
+
+.tab-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 210px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--suggest-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 40px var(--edge);
+  z-index: 5;
+}
+
+/* custom slim scrollbar instead of the native one */
+.tab-menu::-webkit-scrollbar { width: 10px; }
+.tab-menu::-webkit-scrollbar-track { background: transparent; }
+.tab-menu::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background: var(--key-border);
+  background-clip: padding-box;
+}
+.tab-menu::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: padding-box; }
+.tab-menu::-webkit-scrollbar-corner { background: transparent; }
+
+.tab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 9px 7px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-2);
+  font: 500 12px/1 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tab-menu-item:hover { background: var(--hover); color: var(--text); }
+
+.tab-menu-item .tab-chip-label { max-width: 220px; }
+
+.tab-menu-caret { margin-left: auto; display: grid; place-items: center; color: var(--text-3); }
+
+.tab-menu-back {
+  margin-bottom: 4px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  color: var(--pill-text);
+}
+
+.tab-menu-empty {
+  padding: 8px 10px;
+  color: var(--text-3);
+  font: 400 11.5px/1.4 "Inter", system-ui, sans-serif;
+}
 
 .tab-fav {
   position: relative;
@@ -816,6 +904,30 @@ body.no-tabs .tab-strip { display: none; }
   border-color: var(--border-strong);
   color: var(--text);
 }
+
+/* the hidden attribute must win over .set-row's display:flex */
+[hidden] { display: none !important; }
+
+/* weather: city search results + row spacing around the interposed list */
+#wx-units-row, #wx-sky-row { margin-top: 12px; }
+.wx-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0 58px;
+}
+.wx-results button {
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--key-border);
+  background: var(--key-bg);
+  color: var(--key-fg);
+  font: 500 11.5px/1.2 "Inter", system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.wx-results button:hover { color: var(--text); border-color: var(--border-strong); }
 
 /* ---------- mod layer (widgets) ---------- */
 
@@ -1021,14 +1133,25 @@ body.no-tabs .tab-strip { display: none; }
   font: 400 9px/1 "Silkscreen", "Courier New", monospace;
 }
 
-.wg-rt {
+.wg-status {
   flex: none;
   font: 400 7px/1 "Silkscreen", "Courier New", monospace;
   letter-spacing: 0.06em;
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.4);
+  border: 1px solid transparent;
   border-radius: 4px;
   padding: 2px 4px;
+}
+
+.wg-status.live { color: #22c55e; border-color: rgba(34, 197, 94, 0.4); }
+.wg-status.late { color: #f59e0b; border-color: rgba(245, 158, 11, 0.4); }
+.wg-status.early { color: #38bdf8; border-color: rgba(56, 189, 248, 0.45); }
+.wg-status.cancelled { color: #ef4444; border-color: rgba(239, 68, 68, 0.45); }
+
+.wg-bus-row.is-cancelled { opacity: 0.55; }
+
+.wg-bus-row.is-cancelled .wg-badge {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 .wg-dest {
