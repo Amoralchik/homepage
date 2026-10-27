@@ -70,14 +70,18 @@ the search input, the time pill, the help dock, and the **pulsing border** on th
 search box — for a completely custom minimal (or maximal) layout. Toggles persist
 like everything else.
 
-**Tab strip:** the **Tabs** row pins a line of tabs to the middle top of the page.
-**Recent** lists the tabs you had open last (across all windows) — clicking one
-focuses that exact tab; **Most used** lists your top sites, ranked by a tiny
-background tracker that counts tab activations and page loads. Clicking a most-used
-site focuses its tab if it's open right now, otherwise opens it in place. Both modes
-stay live (the strip refreshes every few seconds) and fall back to letter chips when
-a favicon is missing. Outside the extension the strip is unavailable and the row
-disappears.
+**Quick bar:** the **Bar** row pins a line of shortcuts to the middle top of the page.
+**Recent** lists the tabs you had open last (across all windows) — clicking one focuses
+that exact tab; **Most used** lists your top sites, ranked by a tiny background tracker
+that counts tab activations and page loads — clicking one focuses the site's tab if
+it's open right now, otherwise opens it in place; **Bookmarks** mirrors your bookmarks
+bar (or your newest bookmarks if the bar is empty) — clicking one opens the site,
+focusing its tab when it's already open. Folders stay folders: they render as their own
+chips with a ▾ dropdown listing everything inside. The bar shows whatever fits the line
+and tucks the rest into a "··· more" chip; folder rows in any menu drill in with a back
+row on top. Bookmark chips borrow favicons the usage tracker has already seen, menus
+scroll with a slim custom scrollbar, and missing favicons fall back to letter chips.
+Outside the extension the bar is unavailable and the row disappears.
 
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
@@ -114,9 +118,9 @@ anytime with `?phase=morning` / `day` / `evening` / `night` in the URL (or set
 3. Click **Load unpacked** and select this folder
 4. Open a new tab — done.
 
-The extension asks for the `tabs` and `storage` permissions — `tabs` is what lets the
-tab strip list (Chrome shows this as "Read your browsing activity"); the data never
-leaves your machine.
+The extension asks for the `tabs`, `storage` and `bookmarks` permissions — `tabs`
+feeds the quick bar's Recent mode (Chrome shows this as "Read your browsing activity"),
+`bookmarks` feeds its Bookmarks mode; all data stays on your machine.
 
 ## Or set it as the Home / startup page
 

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Home",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Pixel-art start page with a flickering grid and multi-provider search.",
-  "permissions": ["tabs", "storage"],
+  "permissions": ["tabs", "storage", "bookmarks"],
   "background": {
     "service_worker": "background.js"
   },

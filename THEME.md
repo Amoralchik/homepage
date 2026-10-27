@@ -137,3 +137,34 @@ purple), classic×evening (regression: unchanged orange sunset).
 **Knob:** chromatic themes keep their existing `sat` multipliers, so Green's
 evening is loud (100% base saturation × 1.1). If a theme ever feels neon,
 tune its `sat` — hue is now guaranteed on-theme.
+
+---
+
+# 4. Monochrome Pair — Dark & Bright (2026-10-01)
+
+**Ask:** "redo bright and dark, to a white and black." Both were desaturated
+*blue* (hue pass-through + sat 0.45/0.9 on the navy base, blue sun/moon ramps,
+blue-gray UI accents) — muted navy, not black/white.
+
+**Change:**
+- `THEMES.dark` → sat 0.1, lum 0.65, gray `moonRamp`/`sunRamp`, gray glow.
+- `THEMES.bright` → sat 0.08, lum 1.2, gray ramps, white glow.
+- style.css dark/bright accent blocks → neutral grays (borders, glow, sel,
+  chips, keys, submit).
+- New rule: dark/bright additionally **desaturate the phase glass itself** —
+  `hsl(from var(--panel-base) h 0% l / alpha)` zeroes saturation while keeping
+  each surface's own lightness and alpha, so night glass stays near-black and
+  morning glass stays white (a first attempt mixing toward mid-gray lightened
+  dark panels and was reverted).
+
+**Verified:** dark×night (grayscale moon, neutral black glass), bright×day
+(white world, white glass), dark×evening (computed search bg = pure `#1f1f1f`
+at 82% alpha; remaining warmth is the phase-fixed text, by design).
+
+**Bright refinement (same day):** night/evening under Bright were still too
+dark for a "white" theme — the night palette is so dark (5–12% luminance)
+that a multiplier can't lift it without blowing out morning/day. Bright now
+has `liftByPhase` (night 0.38, evening 0.32, morning 0.08, day 0.05):
+`tintRGB` pulls luminance toward white by that fraction (`l += (100-l)*lift`),
+and `tintPalette` blends the phase-keyed lift across phase edges with the same `k` used
+for colors. Multipliers stay at lum 1.2.

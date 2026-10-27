@@ -120,17 +120,23 @@ const THEMES = {
     sunRamp: ['#ff8f2e', '#ffb03a', '#ffd45e', '#fff2c8'],
     glow: [99, 132, 255],
   },
+  /* dark & bright are the monochrome pair: near-zero saturation drains the
+     palette to grayscale while lum sets the mood */
   dark: {
-    hue: 0, sat: 0.45, lum: 0.72,
-    moonRamp: ['#12182b', '#232f4d', '#37456b', '#4e5f8a'],
-    sunRamp: ['#37456b', '#4e5f8a', '#6d82ad', '#93a6cc'],
-    glow: [90, 110, 160],
+    hue: 0, sat: 0.1, lum: 0.65,
+    moonRamp: ['#161616', '#2e2e2e', '#4d4d4d', '#7a7a7a'],
+    sunRamp: ['#333333', '#525252', '#7d7d7d', '#b0b0b0'],
+    glow: [110, 110, 110],
   },
   bright: {
-    hue: 0, sat: 0.9, lum: 1.2,
-    moonRamp: ['#8fa8d9', '#b0c4ea', '#d2e0fb', '#ffffff'],
-    sunRamp: ['#ffd98a', '#ffe7ae', '#fff3d2', '#ffffff'],
-    glow: [220, 235, 255],
+    hue: 0, sat: 0.08, lum: 1.2,
+    // the night/evening palettes are too dark to multiply into a white world,
+    // so bright lifts luminance toward white — keyed by phase, because
+    // morning/day are already white and would wash out
+    liftByPhase: { morning: 0.08, day: 0.05, evening: 0.32, night: 0.38 },
+    moonRamp: ['#c9c9c9', '#e0e0e0', '#f2f2f2', '#ffffff'],
+    sunRamp: ['#e9e9e9', '#f3f3f3', '#fafafa', '#ffffff'],
+    glow: [240, 240, 240],
   },
   cyberpunk: {
     hue: 75, sat: 1.5, lum: 1.05,
@@ -206,18 +212,27 @@ function tintRGB(c, t) {
   const [h, s, l] = rgbToHsl(c[0], c[1], c[2]);
   const nh = t.hue ? (HUE_REF + t.hue) % 360 : h;
   const ns = Math.max(0, Math.min(100, s * t.sat));
-  const nl = Math.max(0, Math.min(100, l * t.lum));
+  let nl = Math.max(0, Math.min(100, l * t.lum));
+  if (t.lift) nl += (100 - nl) * t.lift;
   return hslToRgb(nh, ns, nl);
 }
 
 // applies the theme transform to a whole phase palette
 function tintPalette(pal, themeKey) {
   const t = THEMES[themeKey] || THEMES.classic;
+  // blend an optional phase-keyed lift the same way palette colors blend,
+  // so the transition between lifted phases stays seamless
+  let tt = t;
+  if (t.liftByPhase && pal.phase) {
+    const a = t.liftByPhase[pal.phase] ?? 0;
+    const b = t.liftByPhase[pal.next] ?? 0;
+    tt = { ...t, lift: a + (b - a) * (pal.k || 0) };
+  }
   const out = { ...pal };
   for (const key of ['skyTop', 'skyBot', 'gridDim', 'gridBright', 'sparkle', 'sunGlow']) {
-    out[key] = tintRGB(pal[key], t);
+    out[key] = tintRGB(pal[key], tt);
   }
-  out.star = tintRGB([150, 175, 255], t);
+  out.star = tintRGB([150, 175, 255], tt);
   return out;
 }
 
@@ -1205,17 +1220,19 @@ const bgApi = (function background() {
     bgApi.setDotSize(v);
   });
 
-  /* ---------- tab strip (middle top) ---------- */
+  /* ---------- quick bar (middle top) ---------- */
 
-  // A line of tabs on the middle top: "recent" lists the tabs you had open
-  // last (click focuses that tab), "top" lists your most used sites, ranked
-  // by background.js (click focuses the site's tab or opens it here).
+  // A line of shortcuts on the middle top: "recent" lists the tabs you had
+  // open last (click focuses that tab), "top" lists your most used sites,
+  // ranked by background.js, and "bookmarks" mirrors the bookmarks bar
+  // (click opens the site, focusing its tab when it's already open).
 
   const stripEl = document.getElementById('tab-strip');
   const tabsRow = document.getElementById('tabs-row');
   const tabsOpts = document.getElementById('tabs-opts');
-  const VALID_TAB_MODES = ['off', 'top', 'recent'];
-  const STRIP_MAX = 8;
+  const VALID_TAB_MODES = ['off', 'top', 'recent', 'bookmarks'];
+  const STRIP_MAX = 8;        // recent / most used are top-N lists
+  const BOOKMARKS_MAX = 40;   // bookmarks show what fits, the rest → "more" chip
 
   function tabsApi() {
     return typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query ? chrome : null;
@@ -1237,9 +1254,77 @@ const bgApi = (function background() {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; }
   }
 
+  // storage key background.js ranks sites by (origin with trailing slash)
+  function originKey(url) {
+    try {
+      const u = new URL(url);
+      return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin + '/' : null;
+    } catch (e) { return null; }
+  }
+
+  // bookmarks mode: the bookmarks bar (or the newest bookmarks when the bar
+  // is empty), with favicons borrowed from the usage tracker where it can.
+  // Folders stay folders — they render as chips with a dropdown of contents.
+  async function bookmarkItems(chromeApi) {
+    if (!(chromeApi.bookmarks && chromeApi.bookmarks.getTree)) return [];
+    const flatten = (n, out) => {
+      if (n.url) out.push(n);
+      for (const c of n.children || []) flatten(c, out);
+    };
+    let barKids = [];
+    try {
+      const tree = await chromeApi.bookmarks.getTree();
+      const barId = chromeApi.bookmarks.BAR_FOLDER_ID || '1';
+      const bar = ((tree[0] && tree[0].children) || []).find(c => c.id === barId);
+      barKids = (bar && bar.children) || [];
+    } catch (e) { barKids = []; }
+
+    let items = [];
+    for (const n of barKids) {
+      if (n.url) {
+        items.push({ kind: 'bookmark', label: n.title || hostOf(n.url), url: n.url, exact: true });
+      } else {
+        const kids = [];
+        for (const c of n.children || []) flatten(c, kids);
+        items.push({
+          kind: 'folder',
+          label: n.title || 'Folder',
+          children: kids
+            .filter(k => /^https?:/.test(k.url))
+            .map(k => ({ kind: 'bookmark', label: k.title || hostOf(k.url), url: k.url, exact: true })),
+        });
+      }
+    }
+    // no bookmarks bar content — fall back to the newest bookmarks overall
+    if (!items.length) {
+      try {
+        const recent = await chromeApi.bookmarks.getRecent(STRIP_MAX * 4);
+        items = recent
+          .filter(n => n.url && /^https?:/.test(n.url))
+          .map(n => ({ kind: 'bookmark', label: n.title || hostOf(n.url), url: n.url, exact: true }));
+      } catch (e) { items = []; }
+    }
+    items = items.slice(0, BOOKMARKS_MAX);
+
+    let favs = {};
+    try {
+      if (chromeApi.storage && chromeApi.storage.local) {
+        const got = await chromeApi.storage.local.get('home:tabCounts');
+        favs = (got && got['home:tabCounts']) || {};
+      }
+    } catch (e) { }
+    const favOf = url => (favs[originKey(url)] || {}).fav || '';
+    for (const it of items) {
+      if (it.kind === 'folder') for (const k of it.children) k.fav = favOf(k.url);
+      else it.fav = favOf(it.url);
+    }
+    return items;
+  }
+
   async function stripItems(mode) {
     const chromeApi = tabsApi();
     if (!chromeApi) return [];
+    if (mode === 'bookmarks') return bookmarkItems(chromeApi);
     if (mode === 'top') {
       if (!(chromeApi.storage && chromeApi.storage.local)) return [];
       const got = await chromeApi.storage.local.get('home:tabCounts');
@@ -1252,7 +1337,11 @@ const bgApi = (function background() {
     const selfPrefix = location.origin + '/';
     const tabs = await chromeApi.tabs.query({});
     return tabs
-      .filter(t => t.url && !t.url.startsWith(selfPrefix) && t.url !== 'about:blank')
+      .filter(t => t.url
+        && !t.url.startsWith(selfPrefix)
+        // Chrome reports overridden new-tab pages as chrome://newtab/ — that's us
+        && !/^chrome:\/\/newtab\/?$/.test(t.url)
+        && t.url !== 'about:blank')
       .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
       .slice(0, STRIP_MAX)
       .map(t => ({ label: t.title || hostOf(t.url), url: t.url, fav: t.favIconUrl || '', tabId: t.id, windowId: t.windowId }));
@@ -1272,6 +1361,13 @@ const bgApi = (function background() {
     return holder;
   }
 
+  function stripFolderIcon() {
+    const holder = document.createElement('span');
+    holder.className = 'tab-fav';
+    holder.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 6.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5h-7L10 5H4.5A1.5 1.5 0 0 0 3 6.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+    return holder;
+  }
+
   async function openStripItem(it) {
     const chromeApi = tabsApi();
     if (!chromeApi) return;
@@ -1282,42 +1378,185 @@ const bgApi = (function background() {
       } catch (e) { /* tab closed since the last refresh */ }
       return;
     }
-    // a most-used site that's actually open right now? focus that tab
+    // already open in some tab? focus it (exact URL for bookmarks, site-wide for most used)
     try {
-      const open = await chromeApi.tabs.query({ url: it.url + '*' });
-      if (open.length) {
-        await chromeApi.tabs.update(open[0].id, { active: true });
-        await chromeApi.windows.update(open[0].windowId, { focused: true });
+      const open = await chromeApi.tabs.query(it.exact ? {} : { url: it.url + '*' });
+      const hit = it.exact ? open.find(t => t.url === it.url) : open[0];
+      if (hit) {
+        await chromeApi.tabs.update(hit.id, { active: true });
+        await chromeApi.windows.update(hit.windowId, { focused: true });
         return;
       }
     } catch (e) { }
     location.href = it.url;
   }
 
+  /* ---------- bar menus (folder + overflow dropdowns) ---------- */
+
+  // One dropdown menu at a time. Folder rows drill into the next level with a
+  // back row on top, so the "more" overflow chip can park whole folders too.
+
+  let stripMenu = null;
+
+  function closeStripMenu() {
+    if (stripMenu) {
+      stripMenu.remove();
+      stripMenu = null;
+    }
+  }
+
+  function labelSpan(text) {
+    const s = document.createElement('span');
+    s.className = 'tab-chip-label';
+    s.textContent = text;
+    return s;
+  }
+
+  function caretSpan(direction) {
+    const d = direction === 'right' ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6';
+    const s = document.createElement('span');
+    s.className = 'tab-caret';
+    s.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="${d}" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    return s;
+  }
+
+  function openStripMenu(chip, entries, title) {
+    const wasOpen = stripMenu && stripMenu._chip === chip;
+    closeStripMenu();
+    if (wasOpen) return;
+    const menu = document.createElement('div');
+    menu.className = 'tab-menu';
+    menu._chip = chip;
+    const stack = [{ entries, title }];
+
+    const renderList = () => {
+      const level = stack[stack.length - 1];
+      menu.innerHTML = '';
+      if (stack.length > 1) {
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'tab-menu-item tab-menu-back';
+        back.addEventListener('click', e => {
+          e.stopPropagation();
+          stack.pop();
+          renderList();
+        });
+        back.appendChild(caretSpan('left'));
+        back.appendChild(labelSpan(level.title));
+        menu.appendChild(back);
+      }
+      for (const it of level.entries) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'tab-menu-item';
+        if (it.kind === 'folder') {
+          row.addEventListener('click', e => {
+            e.stopPropagation();
+            stack.push({ entries: it.children, title: it.label });
+            renderList();
+          });
+          row.appendChild(stripFolderIcon());
+          row.appendChild(labelSpan(it.label));
+          row.appendChild(caretSpan('right'));
+        } else {
+          row.title = it.label + (it.url && it.url !== it.label ? '\n' + it.url : '');
+          row.addEventListener('click', () => { closeStripMenu(); openStripItem(it); });
+          row.appendChild(stripFavicon(it));
+          row.appendChild(labelSpan(it.label));
+        }
+        menu.appendChild(row);
+      }
+      if (!level.entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tab-menu-empty';
+        empty.textContent = 'empty folder';
+        menu.appendChild(empty);
+      }
+      // keep wide menus anchored to the right edge instead of off-screen
+      menu.style.left = '';
+      menu.style.right = '';
+      const box = menu.getBoundingClientRect();
+      if (box.right > innerWidth - 8) {
+        menu.style.left = 'auto';
+        menu.style.right = '0';
+      }
+    };
+
+    renderList();
+    chip.appendChild(menu);
+    stripMenu = menu;
+  }
+
+  document.addEventListener('click', closeStripMenu);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeStripMenu(); });
+
+  function buildChip(it) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tab-chip';
+    chip._item = it;
+    if (it.kind === 'folder') {
+      chip.classList.add('tab-chip-folder');
+      chip.title = it.label;
+      chip.addEventListener('click', e => {
+        e.stopPropagation();
+        openStripMenu(chip, it.children, it.label);
+      });
+      chip.appendChild(stripFolderIcon());
+      chip.appendChild(labelSpan(it.label));
+      chip.appendChild(caretSpan());
+    } else {
+      chip.title = it.label + (it.url && it.url !== it.label ? '\n' + it.url : '');
+      chip.addEventListener('click', () => openStripItem(it));
+      chip.appendChild(stripFavicon(it));
+      chip.appendChild(labelSpan(it.label));
+    }
+    return chip;
+  }
+
+  function buildMoreChip(overflow) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tab-chip tab-chip-more';
+    chip.title = 'More';
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      openStripMenu(chip, overflow, 'more');
+    });
+    const holder = document.createElement('span');
+    holder.className = 'tab-fav';
+    holder.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+    chip.appendChild(holder);
+    chip.appendChild(labelSpan('more'));
+    chip.appendChild(caretSpan());
+    return chip;
+  }
+
   async function refreshTabStrip() {
     if (document.body.classList.contains('no-tabs')) return;
+    if (stripMenu) return; // don't yank an open menu from under the cursor
     let items = [];
     try { items = await stripItems(currentTabMode()); } catch (e) { items = []; }
     stripEl.innerHTML = '';
     stripEl.classList.toggle('has-items', items.length > 0);
-    for (const it of items) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'tab-chip';
-      chip.title = it.label + (it.url && it.url !== it.label ? '\n' + it.url : '');
-      chip.addEventListener('click', () => openStripItem(it));
-      chip.appendChild(stripFavicon(it));
-      const label = document.createElement('span');
-      label.className = 'tab-chip-label';
-      label.textContent = it.label;
-      chip.appendChild(label);
-      stripEl.appendChild(chip);
+    const chips = items.map(buildChip);
+    const overflow = [];
+    const moreChip = buildMoreChip(overflow);
+    for (const c of chips) stripEl.appendChild(c);
+    stripEl.appendChild(moreChip);
+    // whatever doesn't fit the line tucks into the "more" chip
+    while (stripEl.scrollWidth > stripEl.clientWidth + 1 && chips.length) {
+      const popped = chips.pop();
+      overflow.unshift(popped._item);
+      popped.remove();
     }
+    if (!overflow.length) moreChip.remove();
   }
 
   function applyTabStrip() {
     const mode = currentTabMode();
     document.body.classList.toggle('no-tabs', mode === 'off' || !tabsApi());
+    closeStripMenu();
     refreshTabStrip();
   }
 
@@ -1332,6 +1571,11 @@ const bgApi = (function background() {
   renderTabOpts();
   applyTabStrip();
   setInterval(() => { if (!document.hidden) refreshTabStrip(); }, 5000);
+  let stripResizeTimer;
+  addEventListener('resize', () => {
+    clearTimeout(stripResizeTimer);
+    stripResizeTimer = setTimeout(() => { closeStripMenu(); refreshTabStrip(); }, 150);
+  });
 
 
   function setSettings(open) {
