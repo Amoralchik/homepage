@@ -11,7 +11,7 @@ body[data-phase="night"] {
   --edge-base: rgba(2, 6, 20, 0.5);
   --text: #d7e0fb;
   --text-2: #8fa0d4;
-  --text-3: #55628f;
+  --text-3: #6875a6;
   --accent: #6c8cff;
   --halo1: rgba(43, 72, 190, 0.14);
   --halo2: rgba(90, 120, 235, 0.10);
@@ -27,12 +27,12 @@ body[data-phase="night"] {
   --pill-bg-base: rgba(8, 15, 34, 0.7);
   --pill-border: rgba(104, 133, 240, 0.25);
   --pill-text: #7d8fd0;
-  --pill-dim: #46538a;
-  --hint: #3d4a76;
+  --pill-dim: #56649c;
+  --hint: #5a6898;
   --key-border: rgba(104, 133, 240, 0.25);
   --key-bg: rgba(8, 15, 34, 0.6);
   --key-bg-base: rgba(8, 15, 34, 0.6);
-  --key-fg: #5b6ba8;
+  --key-fg: #7484bf;
   --glow: rgba(47, 82, 219, 0.10);
   --glow-strong: rgba(66, 99, 235, 0.22);
   --sel: rgba(108, 140, 255, 0.35);
@@ -52,7 +52,7 @@ body[data-phase="day"] {
   --edge-base: rgba(30, 60, 120, 0.14);
   --text: #122a4c;
   --text-2: #3a5a86;
-  --text-3: #7792b8;
+  --text-3: #5b789f;
   --accent: #1e66d0;
   --halo1: rgba(255, 255, 255, 0.35);
   --halo2: rgba(255, 214, 140, 0.30);
@@ -68,8 +68,8 @@ body[data-phase="day"] {
   --pill-bg-base: rgba(255, 255, 255, 0.55);
   --pill-border: rgba(28, 64, 130, 0.22);
   --pill-text: #3a5a86;
-  --pill-dim: #8aa3c4;
-  --hint: #6b87ad;
+  --pill-dim: #7590b4;
+  --hint: #4f6c94;
   --key-border: rgba(28, 64, 130, 0.25);
   --key-bg: rgba(255, 255, 255, 0.6);
   --key-bg-base: rgba(255, 255, 255, 0.6);
@@ -98,7 +98,7 @@ body[data-phase="evening"] {
   --edge-base: rgba(20, 8, 14, 0.5);
   --text: #ffe4d0;
   --text-2: #d8a58c;
-  --text-3: #9c6f60;
+  --text-3: #b08070;
   --accent: #ff9e6b;
   --halo1: rgba(255, 120, 70, 0.12);
   --halo2: rgba(255, 170, 110, 0.10);
@@ -114,8 +114,8 @@ body[data-phase="evening"] {
   --pill-bg-base: rgba(40, 22, 34, 0.7);
   --pill-border: rgba(255, 150, 100, 0.22);
   --pill-text: #d8a58c;
-  --pill-dim: #8a5f50;
-  --hint: #8a5f50;
+  --pill-dim: #9a6c5a;
+  --hint: #a37462;
   --key-border: rgba(255, 150, 100, 0.25);
   --key-bg: rgba(40, 22, 34, 0.6);
   --key-bg-base: rgba(40, 22, 34, 0.6);
@@ -249,15 +249,51 @@ body[data-theme="rose"] {
   --submit-fg: #ffd9e8;
 }
 
+body[data-theme="amber"] {
+  --accent: #f0a830;
+  --border: rgba(240, 168, 48, 0.32);
+  --pill-border: rgba(240, 168, 48, 0.28);
+  --border-strong: rgba(240, 168, 48, 0.52);
+  --glow: rgba(240, 168, 48, 0.16);
+  --glow-strong: rgba(240, 168, 48, 0.30);
+  --sel: rgba(240, 168, 48, 0.35);
+  --chip-fg: #f2b552;
+  --key-fg: #e0a040;
+  --submit-bg: #7a4a0f;
+  --submit-bg-hover: #925a14;
+  --submit-fg: #fff0d0;
+}
+
+body[data-theme="teal"] {
+  --accent: #22b3a8;
+  --border: rgba(34, 179, 168, 0.32);
+  --pill-border: rgba(34, 179, 168, 0.28);
+  --border-strong: rgba(34, 179, 168, 0.52);
+  --glow: rgba(34, 179, 168, 0.16);
+  --glow-strong: rgba(34, 179, 168, 0.30);
+  --sel: rgba(34, 179, 168, 0.35);
+  --chip-fg: #4cc9bf;
+  --key-fg: #36b8ad;
+  --submit-bg: #0f5f5a;
+  --submit-bg-hover: #13746d;
+  --submit-fg: #d4fffa;
+}
+
+/* light phases: the bright accent chips/keys above are tuned for dark glass;
+   on white glass they need a deeper shade of the same hue to stay legible */
+body[data-phase="morning"]:not([data-theme="classic"]),
+body[data-phase="day"]:not([data-theme="classic"]) {
+  --chip-fg: color-mix(in srgb, var(--accent) 70%, #000);
+  --key-fg: color-mix(in srgb, var(--accent) 62%, #10203a);
+}
+
 /* themed surfaces: the glass itself (panels, inputs, settings, pills) picks
    up ~12% of the active theme's hue in every phase, so the chrome stops
    lagging behind the themed canvas. The neutral phase values above stay as
    the Classic look and as the fallback where color-mix is unsupported.
    Relative-color syntax keeps the low-alpha washes (hover, chips) from
    turning opaque when mixed. */
-body[data-theme="dark"], body[data-theme="bright"], body[data-theme="cyberpunk"],
-body[data-theme="violet"], body[data-theme="red"], body[data-theme="green"],
-body[data-theme="blue"], body[data-theme="rose"] {
+body[data-theme]:not([data-theme="classic"]) {
   --panel: color-mix(in srgb, var(--panel-base) 88%, var(--accent));
   --suggest-bg: color-mix(in srgb, var(--suggest-bg-base) 88%, var(--accent));
   --pill-bg: color-mix(in srgb, var(--pill-bg-base) 88%, var(--accent));
@@ -357,11 +393,12 @@ body.no-help .hint { display: none; }
   }
 }
 
-body.no-pulse .search {
-  animation: rise 0.7s 0.08s both;
+body.no-pulse .search,
+.search:focus-within {
+  animation: rise 0.7s 0.08s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-/* ---------- search box ---------- *//* ---------- search box ---------- */
+/* ---------- search box ---------- */
 
 .search {
   position: relative;
@@ -499,6 +536,12 @@ body.no-pulse .search {
 }
 
 .menu li:hover, .menu li.active { background: var(--hover); color: var(--text); }
+.menu li .menu-bang {
+  margin-left: auto;
+  color: var(--text-3);
+  font: 400 9px/1 "Silkscreen", "Courier New", monospace;
+}
+.menu li .menu-bang + .check { margin-left: 8px; }
 
 .menu li .check {
   margin-left: auto;
@@ -577,6 +620,60 @@ body.no-pulse .search {
 .suggest-item.calc-row .done {
   font: 400 10px/1.2 "Silkscreen", "Courier New", monospace;
   letter-spacing: 0.04em;
+}
+
+.suggest-item .s-meta {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.suggest-item .s-fav {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font: 400 9px/1 "Silkscreen", monospace;
+}
+.suggest-item .s-fav img { width: 100%; height: 100%; object-fit: cover; }
+
+.suggest-item .s-del {
+  margin-left: auto;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-3);
+  font: 400 14px/1 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.suggest-item:hover .s-del, .suggest-item.active .s-del { opacity: 1; }
+.suggest-item .s-del:hover { color: var(--text); background: var(--hover); }
+
+.suggest-item.history-row .mag { color: var(--text-3); }
+.suggest-item.bang-row .provider-ico { width: 18px; height: 18px; font-size: 10px; flex: none; }
+
+.suggest-head {
+  padding: 6px 12px 4px;
+  color: var(--text-3);
+  font: 400 8.5px/1 "Silkscreen", "Courier New", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .suggest-item .calc-sym {
@@ -674,7 +771,9 @@ body.no-tabs .tab-strip { display: none; }
   transition: color 0.15s, background 0.15s;
 }
 
-.tab-chip:hover { background: var(--hover); color: var(--text); }
+.tab-chip:hover, .tab-chip.menu-open { background: var(--hover); color: var(--text); }
+.tab-chip.menu-open .tab-caret { transform: rotate(180deg); }
+.tab-caret { transition: transform 0.16s; }
 .tab-chip:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 1px; }
 
 .tab-caret { flex: none; display: grid; place-items: center; color: var(--text-3); }
@@ -725,7 +824,26 @@ body.no-tabs .tab-strip { display: none; }
   transition: color 0.15s, background 0.15s;
 }
 
-.tab-menu-item:hover { background: var(--hover); color: var(--text); }
+.tab-menu-item:hover, .tab-menu-item:focus-visible { background: var(--hover); color: var(--text); outline: none; }
+
+.tab-menu-openall {
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  color: var(--text-3);
+  font: 400 9px/1 "Silkscreen", "Courier New", monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tab-menu-count {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-3);
+  font: 400 9px/1 "Silkscreen", "Courier New", monospace;
+}
 
 .tab-menu-item .tab-chip-label { max-width: 220px; }
 
@@ -826,8 +944,13 @@ body.no-tabs .tab-strip { display: none; }
   position: fixed;
   right: 18px;
   bottom: 66px;
-  width: 300px;
-  padding: 14px;
+  width: min(340px, calc(100vw - 36px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--key-border) transparent;
+  padding: 12px 14px 14px;
   border-radius: 14px;
   background: var(--suggest-bg);
   border: 1px solid var(--border);
@@ -847,11 +970,46 @@ body.no-tabs .tab-strip { display: none; }
   pointer-events: auto;
 }
 
+.set-tabs {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  margin: -12px -14px 14px;
+  padding: 10px 10px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--suggest-bg);
+}
+
+.set-tabs button {
+  flex: 1;
+  padding: 8px 6px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-3);
+  font: 400 9.5px/1 "Silkscreen", "Courier New", monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.set-tabs button:hover { color: var(--text-2); }
+.set-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.set-tabs button:focus-visible { outline: 2px solid var(--border-strong); outline-offset: -2px; }
+
+.set-pane { animation: fade 0.18s both; }
+
 .set-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
+.set-row:has(.phase-opts) { align-items: flex-start; }
+.set-row:has(.phase-opts) .set-name { padding-top: 7px; }
 
 .set-row + .set-row { margin-top: 12px; }
 
@@ -898,7 +1056,54 @@ body.no-tabs .tab-strip { display: none; }
   transition: color 0.15s, border-color 0.15s;
 }
 
-.phase-opts button:hover { color: var(--text); }
+.phase-opts button:hover { color: var(--text); border-color: var(--border-strong); }
+.phase-opts button:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 1px; }
+
+/* theme swatches: a little planet chip in front of each theme name */
+.theme-opts button { display: inline-flex; align-items: center; gap: 6px; }
+.theme-opts .sw {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.45);
+}
+
+/* a one-shot action living inside an option row (e.g. Clear history) */
+.phase-opts .opt-action { margin-left: auto; border-style: dashed; }
+.phase-opts .opt-action.flashed { color: var(--text); border-color: var(--accent); border-style: solid; }
+
+/* bang cheat sheet (search tab) */
+.set-bangs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font: 500 11px/1.3 "Inter", system-ui, sans-serif;
+  color: var(--text-2);
+}
+.set-bangs .bang-title {
+  grid-column: 1 / -1;
+  margin-bottom: 4px;
+  color: var(--text-3);
+  font: 500 10.5px/1.4 "Inter", system-ui, sans-serif;
+}
+.set-bangs .bang-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.set-bangs .bang-row span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.set-bangs code {
+  flex: none;
+  min-width: 34px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--key-border);
+  background: var(--key-bg);
+  color: var(--key-fg);
+  font: 400 9px/1.2 "Silkscreen", "Courier New", monospace;
+  text-align: center;
+}
 .phase-opts button.active {
   background: var(--chip-bg);
   border-color: var(--border-strong);
@@ -1396,4 +1601,19 @@ body.no-tabs .tab-strip { display: none; }
   .menu, .chev, .submit { transition: none; }
   .live-dot { animation: none; }
   .search::before, .search::after { animation: none; }
+}
+
+/* a typed bang (!yt …) takes over the provider chip while it's active */
+.provider-btn.bang-on { color: var(--text); background: var(--hover); }
+.provider-btn.bang-on .provider-ico { background: var(--accent); color: var(--submit-fg); }
+
+/* an open dropdown outranks the widget layer and bottom docks, and scrolls
+   instead of running off short screens */
+.search.suggest-open, .search:has(.provider-wrap.open) { z-index: 16; }
+.suggest {
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--key-border) transparent;
 }

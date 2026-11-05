@@ -160,6 +160,18 @@ const THEMES = {
     sunRamp: ['#7a1f0f', '#c33a1a', '#f06a2e', '#ffd0a0'],
     glow: [224, 83, 54],
   },
+  amber: {
+    hue: 183, sat: 0.95, lum: 1.0,
+    moonRamp: ['#4a2e08', '#8f5a12', '#d99a2b', '#ffe0a0'],
+    sunRamp: ['#7a4a0f', '#c77a17', '#f0a830', '#fff0c8'],
+    glow: [240, 170, 60],
+  },
+  teal: {
+    hue: 320, sat: 0.82, lum: 1.0,
+    moonRamp: ['#06302e', '#0f6b66', '#22b3a8', '#a8f5ec'],
+    sunRamp: ['#0d4a46', '#178a80', '#3cc9bb', '#d0fff8'],
+    glow: [50, 200, 185],
+  },
   green: {
     hue: 265, sat: 1.1, lum: 1.0,
     moonRamp: ['#0e3324', '#166b47', '#2fa869', '#a8f0c8'],
@@ -263,6 +275,37 @@ const bgApi = (function background() {
   let modeState = {};
   let wallpaperImg = null;
   let dotSize = 14;
+
+  // pointer interplay: the grid/dots/particles brighten softly around the
+  // cursor, and a click on empty background sends a ripple through the scene.
+  // Strength eases in/out so the glow never pops; off under reduced motion.
+  const pointer = { x: -1e4, y: -1e4, on: false, k: 0, enabled: true };
+  let ripples = [];
+  let focusBoost = 0, focusTarget = 0; // search-focus warmth (lamp)
+  const POINTER_R = 150;
+
+  addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    pointer.x = e.clientX; pointer.y = e.clientY; pointer.on = true;
+  }, { passive: true });
+  document.addEventListener('pointerleave', () => { pointer.on = false; });
+  addEventListener('blur', () => { pointer.on = false; });
+
+  // 0..1 extra brightness at (x, y) from the cursor glow and any live ripples
+  function boostAt(x, y, now) {
+    let b = 0;
+    if (pointer.k > 0.01) {
+      const d = Math.hypot(x - pointer.x, y - pointer.y);
+      if (d < POINTER_R) b += (1 - d / POINTER_R) ** 2 * 0.55 * pointer.k;
+    }
+    for (const r of ripples) {
+      const age = (now - r.t0) / 1000;
+      const ring = age * 520;
+      const d = Math.abs(Math.hypot(x - r.x, y - r.y) - ring);
+      if (d < 26) b += (1 - d / 26) * 0.7 * Math.max(0, 1 - age / 1.4);
+    }
+    return b;
+  }
 
   const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
@@ -395,6 +438,12 @@ const bgApi = (function background() {
   }
 
   function draw(t, dt = 16) {
+    // ease the pointer glow and focus warmth, retire finished ripples
+    const want = pointer.on && pointer.enabled && !reduced ? 1 : 0;
+    pointer.k += (want - pointer.k) * Math.min(1, dt / 180);
+    focusBoost += (focusTarget - focusBoost) * Math.min(1, dt / 400);
+    if (ripples.length) ripples = ripples.filter(r => t - r.t0 < 1400);
+
     // base sky for every mode
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, rgba(pal.skyTop));
@@ -403,17 +452,25 @@ const bgApi = (function background() {
     ctx.fillRect(0, 0, W, H);
 
     if (bgMode === 'scene') drawScene(t);
+    else if (bgMode === 'photo' && !modeState.photo) drawScene(t); // no wallpaper yet
     else drawAltMode(t, dt);
     drawWeather(t, dt);
   }
 
   function drawScene(t) {
-    // grid squares
+    // grid squares — cells near the cursor or a ripple ring glow brighter
     const half = (PITCH - SIZE) / 2;
+    const live = pointer.k > 0.01 || ripples.length > 0;
+    const pr0 = Math.floor((pointer.y - POINTER_R) / PITCH), pr1 = Math.ceil((pointer.y + POINTER_R) / PITCH);
+    const pc0 = Math.floor((pointer.x - POINTER_R) / PITCH), pc1 = Math.ceil((pointer.x + POINTER_R) / PITCH);
     for (let r = 0; r < rows; r++) {
       const y = r * PITCH;
+      const rowLive = live && (ripples.length > 0 || (r >= pr0 && r <= pr1));
       for (let c = 0; c < cols; c++) {
-        const v = o[r * cols + c];
+        let v = o[r * cols + c];
+        if (rowLive && (ripples.length > 0 || (c >= pc0 && c <= pc1))) {
+          v = Math.min(1, v + boostAt(c * PITCH + PITCH / 2, y + PITCH / 2, t));
+        }
         if (v < 0.02) continue;
         ctx.fillStyle = colorCache[Math.round(v * (LEVELS - 1))];
         ctx.fillRect(c * PITCH + half, y + half, SIZE, SIZE);
@@ -466,7 +523,7 @@ const bgApi = (function background() {
   function drawAltMode(t, dt) {
     switch (bgMode) {
       case 'aurora': return drawAurora(t);
-      case 'grid': return drawGridPattern();
+      case 'grid': return drawGridPattern(t);
       case 'lamp': return drawLamp(t, dt);
       case 'noise': return drawNoise(t);
       case 'particles': return drawParticles(t, dt);
@@ -474,7 +531,52 @@ const bgApi = (function background() {
       case 'shooting': return drawShooting(t, dt);
       case 'grain': return drawGrain(t, dt);
       case 'halftone': return drawHalftone(t);
+      case 'photo': return drawPhoto(t);
     }
+  }
+
+  /* photo — the wallpaper itself, cover-fit with a slow Ken Burns drift and a
+     phase-tinted veil so it still follows the day/night cycle and the theme */
+  const PHOTO_VEIL = { morning: 0.16, day: 0.08, evening: 0.34, night: 0.5 };
+
+  function buildPhoto() {
+    const src = wallpaperImg;
+    if (!src || !src.width) { modeState.photo = null; return; }
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const OVER = 1.06; // headroom for the drift
+    const c = document.createElement('canvas');
+    c.width = Math.round(W * OVER * dpr);
+    c.height = Math.round(H * OVER * dpr);
+    const oc = c.getContext('2d');
+    const scale = Math.max(c.width / src.width, c.height / src.height);
+    const dw = src.width * scale, dh = src.height * scale;
+    oc.imageSmoothingQuality = 'high';
+    oc.drawImage(src, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+    modeState.photo = { img: c, over: OVER };
+  }
+
+  function drawPhoto(t) {
+    const p = modeState.photo;
+    const pw = W * p.over, ph = H * p.over;
+    const drift = reduced ? 0 : 1;
+    const ox = (pw - W) / 2 * (1 + 0.9 * Math.sin(t / 23000) * drift);
+    const oy = (ph - H) / 2 * (1 + 0.9 * Math.sin(t / 31000 + 1.3) * drift);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(p.img, -ox, -oy, pw, ph);
+    const A = PHOTO_VEIL[pal.phase] ?? 0.3, B = PHOTO_VEIL[pal.next] ?? A;
+    const a = A + (B - A) * (pal.k || 0);
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, rgba(pal.skyTop, a));
+    g.addColorStop(1, rgba(pal.skyBot, a * 0.7));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    // vignette keeps the centered UI readable on busy photos
+    const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, `rgba(0,0,0,${(0.18 + a * 0.4).toFixed(3)})`);
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+    drawStarsFaint(t, 0.5);
   }
 
   function drawStarsFaint(t, factor) {
@@ -513,14 +615,42 @@ const bgApi = (function background() {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  function drawGridPattern() {
-    ctx.strokeStyle = rgba(pal.gridBright, 0.15);
-    ctx.lineWidth = 1;
+  /* grid — graph paper that drifts very slowly, with brighter intersection
+     ticks and a soft spotlight that follows the cursor */
+  function drawGridPattern(t) {
     const step = 44;
-    ctx.beginPath();
-    for (let x = step; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-    for (let y = step; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
-    ctx.stroke();
+    const shift = reduced ? 0 : (t / 1000 * 3) % step; // ~3px/s diagonal drift
+    const path = new Path2D();
+    for (let x = step - shift; x < W; x += step) { path.moveTo(x + 0.5, 0); path.lineTo(x + 0.5, H); }
+    for (let y = step - shift; y < H; y += step) { path.moveTo(0, y + 0.5); path.lineTo(W, y + 0.5); }
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = rgba(pal.gridBright, 0.13);
+    ctx.stroke(path);
+
+    // intersection ticks, fading toward the top like the scene's water glow
+    for (let y = step - shift; y < H; y += step) {
+      const a = 0.12 + 0.22 * (y / H);
+      ctx.fillStyle = rgba(pal.gridBright, +a.toFixed(3));
+      for (let x = step - shift; x < W; x += step) ctx.fillRect(x - 1, y - 1, 3, 3);
+    }
+
+    if (pointer.k > 0.01) {
+      const R = POINTER_R * 1.8;
+      const g = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, R);
+      g.addColorStop(0, rgba(pal.gridBright, 0.55 * pointer.k));
+      g.addColorStop(1, rgba(pal.gridBright, 0));
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 1.5;
+      ctx.stroke(path);
+    }
+    for (const r of ripples) {
+      const age = (t - r.t0) / 1000;
+      ctx.strokeStyle = rgba(pal.gridBright, Math.max(0, 0.5 * (1 - age / 1.4)));
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, age * 520, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   /* lamp — warm light follows the clock instead of the theme tint:
@@ -577,6 +707,11 @@ const bgApi = (function background() {
     if (modeState.lamp) {
       ctx.globalAlpha = flick;
       ctx.drawImage(modeState.lamp, 0, 0, W, H);
+      // search-focus warmth: the lamp brightens ~15% while you type
+      if (focusBoost > 0.01) {
+        ctx.globalAlpha = 0.15 * focusBoost;
+        ctx.drawImage(modeState.lamp, 0, 0, W, H);
+      }
       ctx.globalAlpha = 1;
     }
 
@@ -601,7 +736,7 @@ const bgApi = (function background() {
 
     const lx = W / 2, ly = -10;
     const rg = ctx.createRadialGradient(lx, ly + 24, 0, lx, ly + 24, 130);
-    rg.addColorStop(0, rgba(LAMP_CORE, 0.8 * a * flick));
+    rg.addColorStop(0, rgba(LAMP_CORE, Math.min(1, 0.8 * a * flick * (1 + 0.15 * focusBoost))));
     rg.addColorStop(1, rgba(cone, 0));
     ctx.fillStyle = rg;
     ctx.fillRect(lx - 140, ly - 116, 280, 280);
@@ -610,6 +745,19 @@ const bgApi = (function background() {
   function drawNoise(t) {
     const n = modeState.noise;
     if (!n) return;
+    // a slow breathing light under the grain gives the static texture depth
+    const br = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(t / 5200);
+    const lx = W * (0.5 + 0.18 * Math.sin(t / 17000)), ly = H * (0.42 + 0.08 * Math.cos(t / 13000));
+    const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, Math.max(W, H) * 0.6);
+    lg.addColorStop(0, rgba(pal.gridBright, 0.10 + 0.06 * br));
+    lg.addColorStop(1, rgba(pal.gridBright, 0));
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, 0, W, H);
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.8);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
     const ox = reduced ? 0 : Math.floor(Math.random() * n.width);
     const oy = reduced ? 0 : Math.floor(Math.random() * n.height);
     for (let x = -n.width; x < W + n.width; x += n.width) {
@@ -619,13 +767,39 @@ const bgApi = (function background() {
     }
   }
 
+  /* particles — rising dust that links into faint constellations when motes
+     drift close, and reaches toward the cursor */
   function drawParticles(t, dt) {
-    for (const p of modeState.parts) {
+    const parts = modeState.parts;
+    for (const p of parts) {
       p.y -= (p.sp * dt) / 1000;
       p.x += Math.sin(t / 1000 + p.sw) * 0.35;
       if (p.y < -6) { p.y = H + 6; p.x = Math.random() * W; }
       if (p.x < -6) p.x = W + 6;
       if (p.x > W + 6) p.x = -6;
+    }
+    const LINK = 96;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < parts.length; i++) {
+      const a = parts[i];
+      for (let j = i + 1; j < parts.length; j++) {
+        const b = parts[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        if (dx > LINK || dx < -LINK || dy > LINK || dy < -LINK) continue;
+        const d = Math.hypot(dx, dy);
+        if (d >= LINK) continue;
+        ctx.strokeStyle = rgba(pal.sparkle, +((1 - d / LINK) * 0.16).toFixed(3));
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      if (pointer.k > 0.01) {
+        const d = Math.hypot(a.x - pointer.x, a.y - pointer.y);
+        if (d < POINTER_R * 1.2) {
+          ctx.strokeStyle = rgba(pal.sparkle, +((1 - d / (POINTER_R * 1.2)) * 0.35 * pointer.k).toFixed(3));
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(pointer.x, pointer.y); ctx.stroke();
+        }
+      }
+    }
+    for (const p of parts) {
       ctx.fillStyle = rgba(pal.sparkle, p.a);
       ctx.fillRect(p.x, p.y, p.r * 2, p.r * 2);
     }
@@ -634,6 +808,46 @@ const bgApi = (function background() {
   function drawRetro(t) {
     const hz = H * 0.44;
     const c = pal.gridBright;
+    drawStarsFaint(t, 0.8);
+
+    // synthwave sun sinking into the horizon, striped toward its base;
+    // colored by the theme's sun ramp (moon ramp at night)
+    if (pal.sun || pal.moon) {
+      const th = THEMES[themeKey] || THEMES.classic;
+      const ramp = pal.sun ? th.sunRamp : th.moonRamp;
+      const R = Math.min(W, H) * 0.17;
+      const cx = W / 2, cy = hz - R * 0.28;
+      drawGlow(cx, cy, R * 2.2, pal.sun ? pal.sunGlow : th.glow, pal.sun ? 0.22 : 0.14);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, hz);
+      ctx.clip();
+      const sg = ctx.createLinearGradient(0, cy - R, 0, cy + R);
+      sg.addColorStop(0, ramp[3]);
+      sg.addColorStop(0.5, ramp[2]);
+      sg.addColorStop(1, ramp[1]);
+      ctx.fillStyle = sg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fill();
+      // stripes cut out of the lower half, thickening and scrolling downward
+      ctx.globalCompositeOperation = 'destination-out';
+      const scroll = reduced ? 0 : (t / 1000 * 6) % 14;
+      for (let y = cy + scroll; y < cy + R; y += 14) {
+        const f = (y - cy) / R;
+        ctx.fillRect(cx - R, y, R * 2, 1 + f * 6);
+      }
+      ctx.restore();
+      // the cut-outs punched through the sky too — repaint it behind the sun
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-over';
+      const g0 = ctx.createLinearGradient(0, 0, 0, H);
+      g0.addColorStop(0, rgba(pal.skyTop));
+      g0.addColorStop(1, rgba(pal.skyBot));
+      ctx.fillStyle = g0;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
     const g = ctx.createLinearGradient(0, hz - 70, 0, hz + 2);
     g.addColorStop(0, rgba(c, 0));
     g.addColorStop(1, rgba(c, 0.35));
@@ -736,20 +950,23 @@ const bgApi = (function background() {
     ctx.globalAlpha = 1;
   }
 
-  function drawHalftone() {
+  function drawHalftone(t) {
     const sample = modeState.halftone;
     if (!sample) return;
     const cell = dotSize;
     // bright dots mixed with the theme accent so they read on any sky
     const base = [0, 1, 2].map(i => Math.round(pal.star[i] * 0.45 + 255 * 0.55));
     const warm = pal.sunGlow;
+    const live = pointer.k > 0.01 || ripples.length > 0;
     for (let gy = 0; gy < sample.rows; gy++) {
       for (let gx = 0; gx < sample.cols; gx++) {
-        const lum = sample.data[gy * sample.cols + gx];
-        if (lum < 0.03) continue;
-        const r = cell * 0.46 * (0.25 + lum * 0.75);
         const cx = gx * cell + cell / 2;
         const cy = gy * cell + cell / 2;
+        let lum = sample.data[gy * sample.cols + gx];
+        // dots swell around the cursor — the image "lights up" under it
+        if (live) lum = Math.min(1, lum + boostAt(cx, cy, t) * 0.8);
+        if (lum < 0.03) continue;
+        const r = cell * 0.46 * (0.25 + lum * 0.75);
         const mixX = gx / sample.cols;
         const col = [0, 1, 2].map(i => Math.round(base[i] + (warm[i] - base[i]) * mixX));
         ctx.fillStyle = rgba(col, +(0.35 + lum * 0.55).toFixed(3));
@@ -807,6 +1024,7 @@ const bgApi = (function background() {
   function buildModeExtras() {
     modeState = { meteor: null };
     if (bgMode === 'halftone') buildHalftoneSample();
+    if (bgMode === 'photo') buildPhoto();
     if (bgMode === 'lamp') {
       buildLamp();
       // motes are seeded per mode-switch/resize; the cone rebuild in
@@ -1062,8 +1280,18 @@ const bgApi = (function background() {
     setWallpaper(img) {
       wallpaperImg = img;
       if (bgMode === 'halftone') buildHalftoneSample();
+      if (bgMode === 'photo') buildPhoto();
       if (reduced) draw(0);
     },
+    // cursor glow + click ripples (persisted on/off from settings)
+    setPointer(enabled) { pointer.enabled = !!enabled; },
+    ripple(x, y) {
+      if (reduced || !pointer.enabled) return;
+      ripples.push({ x, y, t0: performance.now() });
+      if (ripples.length > 4) ripples.shift();
+    },
+    // the search box is focused: lamp warms up a touch
+    setFocus(on) { focusTarget = on ? 1 : 0; },
     setDotSize(v) {
       const n = Math.max(8, Math.min(26, Math.round(v) || 14));
       if (n === dotSize) return;
@@ -1155,6 +1383,11 @@ const bgApi = (function background() {
   function loadStored(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
   }
+  // single-key shortcuts must not fire while typing anywhere
+  function isTypingTarget(el) {
+    return !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      || el instanceof HTMLSelectElement || el.isContentEditable);
+  }
 
   // pill text
   const savedLabel = (loadStored('home:label') || '').trim() || 'home';
@@ -1238,7 +1471,8 @@ const bgApi = (function background() {
 
   // background style
   const bgOpts = document.getElementById('bg-opts');
-  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone'];
+  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone', 'photo'];
+  const WALL_BGS = ['halftone', 'photo']; // modes that draw the wallpaper
   function currentBg() {
     const b = loadStored('home:bg');
     return VALID_BGS.includes(b) ? b : 'scene';
@@ -1248,20 +1482,47 @@ const bgApi = (function background() {
     for (const b of bgOpts.children) {
       b.classList.toggle('active', b.dataset.bg === cur);
     }
+    // only show the knobs that do something in the current mode
+    document.getElementById('wall-row').hidden = !WALL_BGS.includes(cur);
+    document.getElementById('dots-row').hidden = cur !== 'halftone';
+  }
+  function setBg(mode) {
+    store('home:bg', mode);
+    bgApi.setMode(mode);
+    renderBgOpts();
   }
   bgOpts.addEventListener('click', e => {
     const b = e.target.closest('button[data-bg]');
     if (!b) return;
-    store('home:bg', b.dataset.bg);
-    bgApi.setMode(b.dataset.bg);
-    renderBgOpts();
+    setBg(b.dataset.bg);
   });
   renderBgOpts();
   bgApi.setMode(currentBg());
 
-  // wallpaper for the halftone background (stored locally in IndexedDB)
+  // pointer glow / click ripples
+  const motionOpts = document.getElementById('motion-opts');
+  const motionOn = () => loadStored('home:motion') !== 'off';
+  function renderMotionOpts() {
+    for (const b of motionOpts.children) b.classList.toggle('active', (b.dataset.motion === 'on') === motionOn());
+    bgApi.setPointer(motionOn());
+  }
+  motionOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-motion]');
+    if (!b) return;
+    store('home:motion', b.dataset.motion);
+    renderMotionOpts();
+  });
+  renderMotionOpts();
+  // a click on empty background sends a ripple through the scene
+  document.querySelector('.page').addEventListener('pointerdown', e => {
+    if (e.target.closest('.center-wrap')) return;
+    bgApi.ripple(e.clientX, e.clientY);
+  });
+
+  // wallpaper for the halftone/photo backgrounds (stored locally in IndexedDB)
   const wallOpenBtn = document.getElementById('wall-open');
   const wallClearBtn = document.getElementById('wall-clear');
+  const wallClearModalBtn = document.getElementById('wall-clear-modal');
   const wallBrowse = document.getElementById('wall-browse');
   const wallInput = document.getElementById('wall-input');
   const wallModal = document.getElementById('wall-modal');
@@ -1296,12 +1557,40 @@ const bgApi = (function background() {
     });
   }
 
+  // resolves true once the image is decoded and handed to the background
   function applyWallpaper(src) {
-    if (!src) { bgApi.setWallpaper(null); return; }
-    const img = new Image();
-    if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
-    img.onload = () => bgApi.setWallpaper(img);
-    img.src = src;
+    if (!src) { bgApi.setWallpaper(null); return Promise.resolve(false); }
+    return new Promise(resolve => {
+      const img = new Image();
+      if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
+      img.onload = () => { bgApi.setWallpaper(img); resolve(true); };
+      img.onerror = () => resolve(false);
+      img.src = src;
+    });
+  }
+
+  // a new wallpaper on a mode that ignores it would look like nothing
+  // happened — hop to Photo so the pick is visible right away
+  function showWallpaperMode() {
+    if (!WALL_BGS.includes(currentBg())) setBg('photo');
+  }
+
+  async function saveWallpaper(src) {
+    const ok = await applyWallpaper(src);
+    if (!ok) {
+      wallUrl.value = '';
+      wallUrl.placeholder = "couldn't load that image — try another";
+      return;
+    }
+    try { await idbSet('wallpaper', src); } catch (e) { }
+    wallUrl.placeholder = 'paste image URL…';
+    showWallpaperMode();
+    setWallModal(false);
+  }
+
+  async function clearWallpaper() {
+    try { await idbSet('wallpaper', null); } catch (e) { }
+    bgApi.setWallpaper(null);
   }
 
   function setWallModal(open) {
@@ -1318,11 +1607,7 @@ const bgApi = (function background() {
   function loadWallFile(file) {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = async () => {
-      await idbSet('wallpaper', reader.result);
-      applyWallpaper(reader.result);
-      setWallModal(false);
-    };
+    reader.onload = () => saveWallpaper(reader.result);
     reader.readAsDataURL(file);
   }
 
@@ -1336,18 +1621,15 @@ const bgApi = (function background() {
 
   function loadWallUrl() {
     const u = wallUrl.value.trim();
-    if (!u) return;
+    if (!u || !/^(https?:|data:image\/)/i.test(u)) return;
     wallUrl.value = '';
-    applyWallpaper(u);
-    setWallModal(false);
+    saveWallpaper(u); // URLs persist too (previously lost on the next tab)
   }
   document.getElementById('wall-url-load').addEventListener('click', loadWallUrl);
   wallUrl.addEventListener('keydown', e => { if (e.key === 'Enter') loadWallUrl(); });
 
-  wallClearBtn.addEventListener('click', async () => {
-    await idbSet('wallpaper', null);
-    bgApi.setWallpaper(null);
-  });
+  wallClearBtn.addEventListener('click', clearWallpaper);
+  wallClearModalBtn.addEventListener('click', () => { clearWallpaper(); setWallModal(false); });
   idbGet('wallpaper').then(applyWallpaper).catch(() => { });
 
   // halftone dot size slider
@@ -1368,8 +1650,8 @@ const bgApi = (function background() {
 
   // A line of shortcuts on the middle top: "recent" lists the tabs you had
   // open last (click focuses that tab), "top" lists your most used sites,
-  // ranked by background.js, and "bookmarks" mirrors the bookmarks bar
-  // (click opens the site, focusing its tab when it's already open).
+  // ranked by background.js, and "bookmarks" mirrors the bookmarks bar with
+  // its real folder tree. Ctrl/Cmd/middle click opens in a background tab.
 
   const stripEl = document.getElementById('tab-strip');
   const tabsRow = document.getElementById('tabs-row');
@@ -1377,6 +1659,7 @@ const bgApi = (function background() {
   const VALID_TAB_MODES = ['off', 'top', 'recent', 'bookmarks'];
   const STRIP_MAX = 8;        // recent / most used are top-N lists
   const BOOKMARKS_MAX = 40;   // bookmarks show what fits, the rest → "more" chip
+  const OPEN_ALL_CONFIRM = 12;
 
   function tabsApi() {
     return typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query ? chrome : null;
@@ -1406,80 +1689,76 @@ const bgApi = (function background() {
     } catch (e) { return null; }
   }
 
+  // Chrome's own favicon cache (MV3 "favicon" permission) knows every site
+  // you've visited — far more reliable than favicons the tracker happened to see
+  const HAS_FAVICON_API = (() => {
+    try { return chrome.runtime.getManifest().permissions.includes('favicon'); } catch (e) { return false; }
+  })();
+  function faviconFor(pageUrl) {
+    if (!HAS_FAVICON_API || !/^https?:/.test(pageUrl || '')) return '';
+    return chrome.runtime.getURL('/_favicon/?pageUrl=' + encodeURIComponent(pageUrl) + '&size=32');
+  }
+
   // bookmarks mode: the bookmarks bar (or the newest bookmarks when the bar
-  // is empty), with favicons borrowed from the usage tracker where it can.
-  // Folders stay folders — they render as chips with a dropdown of contents.
-  async function bookmarkItems(chromeApi) {
-    if (!(chromeApi.bookmarks && chromeApi.bookmarks.getTree)) return [];
-    const flatten = (n, out) => {
-      if (n.url) out.push(n);
-      for (const c of n.children || []) flatten(c, out);
+  // is empty). Folders keep their nesting — menus drill into subfolders.
+  async function bookmarkItems(api) {
+    if (!(api.bookmarks && api.bookmarks.getTree)) return [];
+    const toItem = n => {
+      if (n.url) {
+        return /^https?:/.test(n.url) ? { kind: 'bookmark', label: n.title || hostOf(n.url), url: n.url, exact: true } : null;
+      }
+      return { kind: 'folder', label: n.title || 'Folder', children: (n.children || []).map(toItem).filter(Boolean) };
     };
     let barKids = [];
     try {
-      const tree = await chromeApi.bookmarks.getTree();
-      const barId = chromeApi.bookmarks.BAR_FOLDER_ID || '1';
+      const tree = await api.bookmarks.getTree();
+      const barId = api.bookmarks.BAR_FOLDER_ID || '1';
       const bar = ((tree[0] && tree[0].children) || []).find(c => c.id === barId);
       barKids = (bar && bar.children) || [];
     } catch (e) { barKids = []; }
 
-    let items = [];
-    for (const n of barKids) {
-      if (n.url) {
-        items.push({ kind: 'bookmark', label: n.title || hostOf(n.url), url: n.url, exact: true });
-      } else {
-        const kids = [];
-        for (const c of n.children || []) flatten(c, kids);
-        items.push({
-          kind: 'folder',
-          label: n.title || 'Folder',
-          children: kids
-            .filter(k => /^https?:/.test(k.url))
-            .map(k => ({ kind: 'bookmark', label: k.title || hostOf(k.url), url: k.url, exact: true })),
-        });
-      }
-    }
+    let items = barKids.map(toItem).filter(Boolean);
     // no bookmarks bar content — fall back to the newest bookmarks overall
     if (!items.length) {
       try {
-        const recent = await chromeApi.bookmarks.getRecent(STRIP_MAX * 4);
-        items = recent
-          .filter(n => n.url && /^https?:/.test(n.url))
-          .map(n => ({ kind: 'bookmark', label: n.title || hostOf(n.url), url: n.url, exact: true }));
+        const recent = await api.bookmarks.getRecent(STRIP_MAX * 4);
+        items = recent.map(toItem).filter(it => it && it.kind === 'bookmark');
       } catch (e) { items = []; }
     }
     items = items.slice(0, BOOKMARKS_MAX);
 
-    let favs = {};
+    let tracked = {};
     try {
-      if (chromeApi.storage && chromeApi.storage.local) {
-        const got = await chromeApi.storage.local.get('home:tabCounts');
-        favs = (got && got['home:tabCounts']) || {};
+      if (api.storage && api.storage.local) {
+        const got = await api.storage.local.get('home:tabCounts');
+        tracked = (got && got['home:tabCounts']) || {};
       }
     } catch (e) { }
-    const favOf = url => (favs[originKey(url)] || {}).fav || '';
-    for (const it of items) {
-      if (it.kind === 'folder') for (const k of it.children) k.fav = favOf(k.url);
-      else it.fav = favOf(it.url);
-    }
+    const decorate = list => {
+      for (const it of list) {
+        if (it.kind === 'folder') decorate(it.children);
+        else it.fav = faviconFor(it.url) || (tracked[originKey(it.url)] || {}).fav || '';
+      }
+    };
+    decorate(items);
     return items;
   }
 
   async function stripItems(mode) {
-    const chromeApi = tabsApi();
-    if (!chromeApi) return [];
-    if (mode === 'bookmarks') return bookmarkItems(chromeApi);
+    const api = tabsApi();
+    if (!api) return [];
+    if (mode === 'bookmarks') return bookmarkItems(api);
     if (mode === 'top') {
-      if (!(chromeApi.storage && chromeApi.storage.local)) return [];
-      const got = await chromeApi.storage.local.get('home:tabCounts');
+      if (!(api.storage && api.storage.local)) return [];
+      const got = await api.storage.local.get('home:tabCounts');
       const data = (got && got['home:tabCounts']) || {};
       return Object.values(data)
         .sort((a, b) => b.count - a.count || b.last - a.last)
         .slice(0, STRIP_MAX)
-        .map(e => ({ label: hostOf(e.url), url: e.url, fav: e.fav || '' }));
+        .map(e => ({ label: hostOf(e.url), url: e.url, fav: faviconFor(e.url) || e.fav || '' }));
     }
     const selfPrefix = location.origin + '/';
-    const tabs = await chromeApi.tabs.query({});
+    const tabs = await api.tabs.query({});
     return tabs
       .filter(t => t.url
         && !t.url.startsWith(selfPrefix)
@@ -1488,14 +1767,14 @@ const bgApi = (function background() {
         && t.url !== 'about:blank')
       .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
       .slice(0, STRIP_MAX)
-      .map(t => ({ label: t.title || hostOf(t.url), url: t.url, fav: t.favIconUrl || '', tabId: t.id, windowId: t.windowId }));
+      .map(t => ({ label: t.title || hostOf(t.url), url: t.url, fav: t.favIconUrl || faviconFor(t.url), tabId: t.id, windowId: t.windowId }));
   }
 
   function stripFavicon(it) {
     const holder = document.createElement('span');
     holder.className = 'tab-fav';
     holder.textContent = (it.label[0] || '·').toUpperCase();
-    if (it.fav && /^https?:/.test(it.fav)) {
+    if (it.fav && /^(https?:|chrome-extension:|data:)/.test(it.fav)) {
       const img = document.createElement('img');
       img.src = it.fav;
       img.alt = '';
@@ -1512,41 +1791,61 @@ const bgApi = (function background() {
     return holder;
   }
 
-  async function openStripItem(it) {
-    const chromeApi = tabsApi();
-    if (!chromeApi) return;
+  // mode: undefined (focus an open tab, else open here), 'new' or 'bg'
+  async function openStripItem(it, mode) {
+    const api = tabsApi();
+    if (!api) { if (it.url) location.href = it.url; return; }
     if (it.tabId != null) {
       try {
-        await chromeApi.tabs.update(it.tabId, { active: true });
-        if (it.windowId != null) await chromeApi.windows.update(it.windowId, { focused: true });
+        await api.tabs.update(it.tabId, { active: true });
+        if (it.windowId != null) await api.windows.update(it.windowId, { focused: true });
       } catch (e) { /* tab closed since the last refresh */ }
+      return;
+    }
+    if (mode === 'new' || mode === 'bg') {
+      try { await api.tabs.create({ url: it.url, active: mode === 'new' }); } catch (e) { }
       return;
     }
     // already open in some tab? focus it (exact URL for bookmarks, site-wide for most used)
     try {
-      const open = await chromeApi.tabs.query(it.exact ? {} : { url: it.url + '*' });
+      const open = await api.tabs.query(it.exact ? {} : { url: it.url + '*' });
       const hit = it.exact ? open.find(t => t.url === it.url) : open[0];
       if (hit) {
-        await chromeApi.tabs.update(hit.id, { active: true });
-        await chromeApi.windows.update(hit.windowId, { focused: true });
+        await api.tabs.update(hit.id, { active: true });
+        await api.windows.update(hit.windowId, { focused: true });
         return;
       }
     } catch (e) { }
     location.href = it.url;
   }
 
+  // every bookmark directly inside a folder, each in a background tab
+  async function openAll(list) {
+    const urls = list.filter(it => it.kind !== 'folder').map(it => it.url);
+    if (!urls.length) return;
+    if (urls.length > OPEN_ALL_CONFIRM && !confirm(`Open ${urls.length} tabs?`)) return;
+    const api = tabsApi();
+    for (const url of urls) {
+      try { await api.tabs.create({ url, active: false }); } catch (e) { }
+    }
+  }
+
   /* ---------- bar menus (folder + overflow dropdowns) ---------- */
 
-  // One dropdown menu at a time. Folder rows drill into the next level with a
-  // back row on top, so the "more" overflow chip can park whole folders too.
+  // One dropdown at a time, anchored under its chip. Folder rows drill into
+  // the next level with a back row on top, so the "more" chip can park whole
+  // folders too. Fully keyboard driven: ↑/↓ move, → enters a folder,
+  // ←/Backspace goes back, Esc closes.
 
   let stripMenu = null;
 
   function closeStripMenu() {
-    if (stripMenu) {
-      stripMenu.remove();
-      stripMenu = null;
-    }
+    if (!stripMenu) return;
+    const chip = stripMenu._chip;
+    stripMenu.remove();
+    stripMenu = null;
+    if (chip) { chip.classList.remove('menu-open'); chip.setAttribute('aria-expanded', 'false'); }
+    kickStrip(); // catch up on changes skipped while the menu was open
   }
 
   function labelSpan(text) {
@@ -1557,56 +1856,61 @@ const bgApi = (function background() {
   }
 
   function caretSpan(direction) {
-    const d = direction === 'right' ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6';
+    const d = direction === 'right' ? 'M9 6l6 6-6 6' : direction === 'left' ? 'M15 6l-6 6 6 6' : 'M6 9l6 6 6-6';
     const s = document.createElement('span');
     s.className = 'tab-caret';
     s.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="${d}" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     return s;
   }
 
-  function openStripMenu(chip, entries, title) {
+  function countSpan(n) {
+    const s = document.createElement('span');
+    s.className = 'tab-menu-count';
+    s.textContent = String(n);
+    return s;
+  }
+
+  function menuRow(cls) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'tab-menu-item' + (cls ? ' ' + cls : '');
+    row.setAttribute('role', 'menuitem');
+    return row;
+  }
+
+  function openStripMenu(chip, entries, title, focusFirst) {
     const wasOpen = stripMenu && stripMenu._chip === chip;
     closeStripMenu();
     if (wasOpen) return;
     const menu = document.createElement('div');
     menu.className = 'tab-menu';
+    menu.setAttribute('role', 'menu');
     menu._chip = chip;
     const stack = [{ entries, title }];
 
-    const renderList = () => {
+    const renderList = focus => {
       const level = stack[stack.length - 1];
       menu.innerHTML = '';
       if (stack.length > 1) {
-        const back = document.createElement('button');
-        back.type = 'button';
-        back.className = 'tab-menu-item tab-menu-back';
-        back.addEventListener('click', e => {
-          e.stopPropagation();
-          stack.pop();
-          renderList();
-        });
-        back.appendChild(caretSpan('left'));
-        back.appendChild(labelSpan(level.title));
+        const back = menuRow('tab-menu-back');
+        back.addEventListener('click', () => { stack.pop(); renderList(true); });
+        back.append(caretSpan('left'), labelSpan(level.title));
         menu.appendChild(back);
       }
       for (const it of level.entries) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'tab-menu-item';
+        const row = menuRow();
         if (it.kind === 'folder') {
-          row.addEventListener('click', e => {
-            e.stopPropagation();
+          row.dataset.folder = '1';
+          row.addEventListener('click', () => {
             stack.push({ entries: it.children, title: it.label });
-            renderList();
+            renderList(true);
           });
-          row.appendChild(stripFolderIcon());
-          row.appendChild(labelSpan(it.label));
-          row.appendChild(caretSpan('right'));
+          row.append(stripFolderIcon(), labelSpan(it.label), countSpan(it.children.length), caretSpan('right'));
         } else {
           row.title = it.label + (it.url && it.url !== it.label ? '\n' + it.url : '');
-          row.addEventListener('click', () => { closeStripMenu(); openStripItem(it); });
-          row.appendChild(stripFavicon(it));
-          row.appendChild(labelSpan(it.label));
+          row.addEventListener('click', e => { const m = mouseMode(e); closeStripMenu(); openStripItem(it, m); });
+          row.addEventListener('auxclick', e => { if (e.button === 1) { e.preventDefault(); openStripItem(it, 'bg'); } });
+          row.append(stripFavicon(it), labelSpan(it.label));
         }
         menu.appendChild(row);
       }
@@ -1616,23 +1920,73 @@ const bgApi = (function background() {
         empty.textContent = 'empty folder';
         menu.appendChild(empty);
       }
-      // keep wide menus anchored to the right edge instead of off-screen
-      menu.style.left = '';
-      menu.style.right = '';
+      const marks = level.entries.filter(it => it.kind !== 'folder' && !it.tabId);
+      if (marks.length > 1 && tabsApi()) {
+        const all = menuRow('tab-menu-openall');
+        all.append(labelSpan(`open all (${marks.length})`));
+        all.addEventListener('click', () => { closeStripMenu(); openAll(marks); });
+        menu.appendChild(all);
+      }
+      // anchor under the chip; flip to its right edge near the screen edge
+      menu.style.left = chip.offsetLeft + 'px';
+      menu.style.right = 'auto';
       const box = menu.getBoundingClientRect();
       if (box.right > innerWidth - 8) {
         menu.style.left = 'auto';
-        menu.style.right = '0';
+        menu.style.right = Math.max(0, stripEl.clientWidth - chip.offsetLeft - chip.offsetWidth) + 'px';
       }
+      if (focus) { const first = menu.querySelector('.tab-menu-item'); if (first) first.focus(); }
     };
 
-    renderList();
-    chip.appendChild(menu);
+    menu.addEventListener('click', e => e.stopPropagation());
+    menu.addEventListener('keydown', e => {
+      const items = [...menu.querySelectorAll('.tab-menu-item')];
+      const i = items.indexOf(document.activeElement);
+      const go = j => { e.preventDefault(); items[(j + items.length) % items.length].focus(); };
+      if (e.key === 'ArrowDown') go(i + 1);
+      else if (e.key === 'ArrowUp') go(i - 1);
+      else if (e.key === 'Home') go(0);
+      else if (e.key === 'End') go(items.length - 1);
+      else if (e.key === 'ArrowRight' && document.activeElement && document.activeElement.dataset.folder) {
+        e.preventDefault();
+        document.activeElement.click();
+      } else if ((e.key === 'ArrowLeft' || e.key === 'Backspace') && stack.length > 1) {
+        e.preventDefault();
+        stack.pop();
+        renderList(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeStripMenu();
+        chip.focus();
+      } else if (e.key === 'Tab') {
+        closeStripMenu();
+      }
+    });
+
+    stripEl.appendChild(menu);
     stripMenu = menu;
+    chip.classList.add('menu-open');
+    chip.setAttribute('aria-expanded', 'true');
+    renderList(focusFirst);
   }
 
-  document.addEventListener('click', closeStripMenu);
+  document.addEventListener('click', e => { if (stripMenu && !stripEl.contains(e.target)) closeStripMenu(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeStripMenu(); });
+
+  // ←/→ walk the chips, ↓ opens a folder/more chip's menu
+  stripEl.addEventListener('keydown', e => {
+    if (!e.target.classList || !e.target.classList.contains('tab-chip')) return;
+    const chips = [...stripEl.querySelectorAll('.tab-chip')];
+    const i = chips.indexOf(e.target);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      chips[(i + (e.key === 'ArrowRight' ? 1 : -1) + chips.length) % chips.length].focus();
+    } else if (e.key === 'ArrowDown' && e.target._menu) {
+      e.preventDefault();
+      e.target._menu(true);
+    }
+  });
 
   function buildChip(it) {
     const chip = document.createElement('button');
@@ -1641,19 +1995,17 @@ const bgApi = (function background() {
     chip._item = it;
     if (it.kind === 'folder') {
       chip.classList.add('tab-chip-folder');
-      chip.title = it.label;
-      chip.addEventListener('click', e => {
-        e.stopPropagation();
-        openStripMenu(chip, it.children, it.label);
-      });
-      chip.appendChild(stripFolderIcon());
-      chip.appendChild(labelSpan(it.label));
-      chip.appendChild(caretSpan());
+      chip.title = `${it.label} — ${it.children.length} item${it.children.length === 1 ? '' : 's'}`;
+      chip.setAttribute('aria-haspopup', 'menu');
+      chip.setAttribute('aria-expanded', 'false');
+      chip._menu = focus => openStripMenu(chip, it.children, it.label, focus);
+      chip.addEventListener('click', e => { e.stopPropagation(); chip._menu(e.detail === 0); });
+      chip.append(stripFolderIcon(), labelSpan(it.label), caretSpan());
     } else {
       chip.title = it.label + (it.url && it.url !== it.label ? '\n' + it.url : '');
-      chip.addEventListener('click', () => openStripItem(it));
-      chip.appendChild(stripFavicon(it));
-      chip.appendChild(labelSpan(it.label));
+      chip.addEventListener('click', e => openStripItem(it, mouseMode(e)));
+      chip.addEventListener('auxclick', e => { if (e.button === 1) { e.preventDefault(); openStripItem(it, 'bg'); } });
+      chip.append(stripFavicon(it), labelSpan(it.label));
     }
     return chip;
   }
@@ -1663,24 +2015,29 @@ const bgApi = (function background() {
     chip.type = 'button';
     chip.className = 'tab-chip tab-chip-more';
     chip.title = 'More';
-    chip.addEventListener('click', e => {
-      e.stopPropagation();
-      openStripMenu(chip, overflow, 'more');
-    });
+    chip.setAttribute('aria-haspopup', 'menu');
+    chip.setAttribute('aria-expanded', 'false');
+    chip._menu = focus => openStripMenu(chip, overflow, 'more', focus);
+    chip.addEventListener('click', e => { e.stopPropagation(); chip._menu(e.detail === 0); });
     const holder = document.createElement('span');
     holder.className = 'tab-fav';
     holder.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
-    chip.appendChild(holder);
-    chip.appendChild(labelSpan('more'));
-    chip.appendChild(caretSpan());
+    chip.append(holder, labelSpan('more'), caretSpan());
     return chip;
   }
 
-  async function refreshTabStrip() {
+  // rebuild only when the content actually changed — the old 5s full
+  // re-render reloaded every favicon and dropped hover/focus mid-gesture
+  let stripSig = '';
+  async function refreshTabStrip(force) {
     if (document.body.classList.contains('no-tabs')) return;
     if (stripMenu) return; // don't yank an open menu from under the cursor
     let items = [];
     try { items = await stripItems(currentTabMode()); } catch (e) { items = []; }
+    const sig = currentTabMode() + innerWidth + JSON.stringify(items, ['kind', 'label', 'url', 'fav', 'tabId', 'children']);
+    if (!force && sig === stripSig) return;
+    stripSig = sig;
+    const focusedIdx = [...stripEl.querySelectorAll('.tab-chip')].indexOf(document.activeElement);
     stripEl.innerHTML = '';
     stripEl.classList.toggle('has-items', items.length > 0);
     const chips = items.map(buildChip);
@@ -1695,13 +2052,23 @@ const bgApi = (function background() {
       popped.remove();
     }
     if (!overflow.length) moreChip.remove();
+    if (focusedIdx >= 0) {
+      const again = stripEl.querySelectorAll('.tab-chip')[focusedIdx];
+      if (again) again.focus();
+    }
+  }
+
+  let stripKickTimer = 0;
+  function kickStrip() {
+    clearTimeout(stripKickTimer);
+    stripKickTimer = setTimeout(() => { if (!document.hidden) refreshTabStrip(); }, 250);
   }
 
   function applyTabStrip() {
     const mode = currentTabMode();
     document.body.classList.toggle('no-tabs', mode === 'off' || !tabsApi());
     closeStripMenu();
-    refreshTabStrip();
+    refreshTabStrip(true);
   }
 
   tabsOpts.addEventListener('click', e => {
@@ -1714,13 +2081,68 @@ const bgApi = (function background() {
   if (!tabsApi()) tabsRow.hidden = true; // no tab data outside the extension
   renderTabOpts();
   applyTabStrip();
-  setInterval(() => { if (!document.hidden) refreshTabStrip(); }, 5000);
+
+  // live updates: react to bookmark/tab/usage changes as they happen; a slow
+  // poll remains only as a safety net
+  (function watchStrip() {
+    const api = tabsApi();
+    if (!api) return;
+    const on = ev => { try { if (ev && ev.addListener) ev.addListener(kickStrip); } catch (e) { } };
+    if (api.bookmarks) ['onCreated', 'onRemoved', 'onChanged', 'onMoved', 'onChildrenReordered'].forEach(k => on(api.bookmarks[k]));
+    ['onActivated', 'onRemoved', 'onCreated'].forEach(k => on(api.tabs[k]));
+    try {
+      api.tabs.onUpdated.addListener((id, info) => {
+        if (info.title || info.favIconUrl || info.status === 'complete') kickStrip();
+      });
+    } catch (e) { }
+    try {
+      api.storage.onChanged.addListener(ch => { if (ch['home:tabCounts'] && currentTabMode() === 'top') kickStrip(); });
+    } catch (e) { }
+  })();
+  setInterval(() => { if (!document.hidden) refreshTabStrip(); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) kickStrip(); });
   let stripResizeTimer;
   addEventListener('resize', () => {
     clearTimeout(stripResizeTimer);
-    stripResizeTimer = setTimeout(() => { closeStripMenu(); refreshTabStrip(); }, 150);
+    stripResizeTimer = setTimeout(() => { closeStripMenu(); refreshTabStrip(true); }, 150);
   });
 
+  // settings are split into tabs (Look / Layout / Search / Weather); the
+  // last tab you used is where the panel reopens
+  const setTabs = document.getElementById('set-tabs');
+  const SET_TABS = [...setTabs.querySelectorAll('[data-tab]')].map(b => b.dataset.tab);
+  function showSetTab(tab, focus) {
+    if (!SET_TABS.includes(tab)) tab = SET_TABS[0];
+    for (const b of setTabs.children) {
+      const on = b.dataset.tab === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+      if (on && focus) b.focus();
+    }
+    for (const p of settingsEl.querySelectorAll('.set-pane')) p.hidden = p.dataset.pane !== tab;
+    store('home:setTab', tab);
+  }
+  setTabs.addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]');
+    if (b) showSetTab(b.dataset.tab);
+  });
+  setTabs.addEventListener('keydown', e => {
+    const i = SET_TABS.indexOf(loadStored('home:setTab'));
+    if (e.key === 'ArrowRight') { e.preventDefault(); showSetTab(SET_TABS[(i + 1) % SET_TABS.length], true); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); showSetTab(SET_TABS[(i - 1 + SET_TABS.length) % SET_TABS.length], true); }
+  });
+  showSetTab(loadStored('home:setTab'));
+
+  // wipe every home:* key (and the wallpaper) after a confirm, then reload
+  document.getElementById('reset-all').addEventListener('click', async () => {
+    if (!confirm('Reset all Home settings, search history and the wallpaper?')) return;
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith('home:')).forEach(k => localStorage.removeItem(k));
+    } catch (e) { }
+    try { await idbSet('wallpaper', null); } catch (e) { }
+    location.reload();
+  });
 
   function setSettings(open) {
     settingsEl.classList.toggle('open', open);
@@ -1983,7 +2405,7 @@ const bgApi = (function background() {
     if (!modAddMenu.contains(e.target) && e.target !== modAdd) modAddMenu.classList.remove('open');
   });
   document.addEventListener('keydown', e => {
-    const inField = document.activeElement instanceof HTMLInputElement;
+    const inField = isTypingTarget(document.activeElement);
     if ((e.key === 'w' || e.key === 'W') && !inField && !e.ctrlKey && !e.metaKey && !e.altKey) {
       setLayer(!modLayer.classList.contains('open'));
     }
@@ -2016,77 +2438,272 @@ const bgApi = (function background() {
   modsScript.addEventListener('error', () => modsScript.remove());
   document.head.appendChild(modsScript);
 
+  /* ================= search ================= */
+
+  // bangs: "!yt cats" (or "cats !yt") searches another site without touching
+  // the default engine. g / d / p mirror the provider dropdown.
+  const BANGS = [
+    { key: 'g',   name: 'Google',         url: 'https://www.google.com/search?q=' },
+    { key: 'd',   name: 'DuckDuckGo',     url: 'https://duckduckgo.com/?q=', alias: ['ddg'], suggest: 'ddg' },
+    { key: 'p',   name: 'Perplexity',     url: 'https://www.perplexity.ai/search?q=' },
+    { key: 'b',   name: 'Bing',           url: 'https://www.bing.com/search?q=' },
+    { key: 'yt',  name: 'YouTube',        url: 'https://www.youtube.com/results?search_query=' },
+    { key: 'w',   name: 'Wikipedia',      url: 'https://en.wikipedia.org/w/index.php?search=' },
+    { key: 'gh',  name: 'GitHub',         url: 'https://github.com/search?q=' },
+    { key: 'r',   name: 'Reddit',         url: 'https://www.reddit.com/search/?q=' },
+    { key: 'm',   name: 'Maps',           url: 'https://www.google.com/maps/search/' },
+    { key: 'i',   name: 'Images',         url: 'https://www.google.com/search?tbm=isch&q=' },
+    { key: 'so',  name: 'Stack Overflow', url: 'https://stackoverflow.com/search?q=' },
+    { key: 'mdn', name: 'MDN',            url: 'https://developer.mozilla.org/en-US/search?q=' },
+    { key: 'npm', name: 'npm',            url: 'https://www.npmjs.com/search?q=' },
+    { key: 'a',   name: 'Amazon',         url: 'https://www.amazon.com/s?k=' },
+    { key: 'tr',  name: 'Translate',      url: 'https://translate.google.com/?sl=auto&tl=en&text=' },
+    { key: 'x',   name: 'X',              url: 'https://x.com/search?q=' },
+  ];
+  const PROVIDER_BANG = { google: 'g', ddg: 'd', perplexity: 'p' };
+
+  const bangLetter = b => b.letter || b.name[0].toUpperCase();
+  const findBang = k => BANGS.find(b => b.key === k || (b.alias || []).includes(k));
+
+  function parseBang(q) {
+    let m = q.match(/^!(\S+)(?:\s+([\s\S]*))?$/);
+    if (m) { const b = findBang(m[1].toLowerCase()); if (b) return { b, q: (m[2] || '').trim() }; }
+    m = q.match(/^([\s\S]*\S)\s+!(\S+)$/);
+    if (m) { const b = findBang(m[2].toLowerCase()); if (b) return { b, q: m[1].trim() }; }
+    return null;
+  }
+  // "!yt" alone opens the site itself
+  const bangUrl = (b, q) => (q ? b.url + encodeURIComponent(q) : new URL(b.url).origin + '/');
+
+  /* ---------- search prefs (settings → Search) ---------- */
+
+  const openPref = () => (loadStored('home:open') === 'new' ? 'new' : 'same');
+  const suggestOn = () => loadStored('home:suggest') !== 'off';
+  const historyOn = () => loadStored('home:history') !== 'off';
+
+  // generic one-of-N option row bound to a localStorage key
+  function bindOpts(el, attr, key, def, after) {
+    const cur = () => loadStored(key) || def;
+    const render = () => {
+      for (const b of el.querySelectorAll(`button[data-${attr}]`)) b.classList.toggle('active', b.dataset[attr] === cur());
+    };
+    el.addEventListener('click', e => {
+      const b = e.target.closest(`button[data-${attr}]`);
+      if (!b) return;
+      store(key, b.dataset[attr]);
+      render();
+      if (after) after();
+    });
+    render();
+  }
+  bindOpts(document.getElementById('open-opts'), 'open', 'home:open', 'same');
+  bindOpts(document.getElementById('suggest-opts'), 'suggest', 'home:suggest', 'on', () => closeSuggestions());
+  bindOpts(document.getElementById('history-opts'), 'history', 'home:history', 'on');
+
+  /* ---------- recent searches (local only) ---------- */
+
+  const HISTORY_KEY = 'home:searches';
+  const HISTORY_MAX = 60;
+
+  function loadHistory() {
+    try {
+      const v = JSON.parse(loadStored(HISTORY_KEY));
+      return Array.isArray(v) ? v.filter(x => x && typeof x.q === 'string') : [];
+    } catch (e) { return []; }
+  }
+  function saveHistory(list) { store(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); }
+  function remember(q) {
+    if (!historyOn() || !q) return;
+    const low = q.toLowerCase();
+    const list = loadHistory().filter(x => x.q.toLowerCase() !== low);
+    list.unshift({ q, ts: Date.now() });
+    saveHistory(list);
+  }
+  function forget(q) { saveHistory(loadHistory().filter(x => x.q !== q)); }
+  function historyMatches(q, n) {
+    if (!historyOn()) return [];
+    const low = q.toLowerCase();
+    const list = loadHistory().map(x => x.q).filter(s => s.toLowerCase() !== low);
+    const pre = list.filter(s => s.toLowerCase().startsWith(low));
+    const mid = list.filter(s => !s.toLowerCase().startsWith(low) && s.toLowerCase().includes(low));
+    return [...pre, ...mid].slice(0, n);
+  }
+
+  const historyClear = document.getElementById('history-clear');
+  historyClear.addEventListener('click', () => {
+    saveHistory([]);
+    closeSuggestions();
+    historyClear.textContent = 'Cleared ✓';
+    historyClear.classList.add('flashed');
+    setTimeout(() => { historyClear.textContent = 'Clear'; historyClear.classList.remove('flashed'); }, 1400);
+  });
+
+  // bang cheat sheet in the Search tab
+  (function renderBangSheet() {
+    const el = document.getElementById('set-bangs');
+    const title = document.createElement('div');
+    title.className = 'bang-title';
+    title.textContent = 'Bangs — start (or end) a search with one to jump to another site:';
+    el.appendChild(title);
+    for (const b of BANGS) {
+      const row = document.createElement('div');
+      row.className = 'bang-row';
+      const code = document.createElement('code');
+      code.textContent = '!' + b.key;
+      const name = document.createElement('span');
+      name.textContent = b.name;
+      row.append(code, name);
+      el.appendChild(row);
+    }
+  })();
+
+  /* ---------- provider dropdown + engine row ---------- */
+
+  const engineOpts = document.getElementById('engine-opts');
+  for (const p of PROVIDERS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.engine = p.id;
+    b.textContent = p.name;
+    engineOpts.appendChild(b);
+  }
+  engineOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-engine]');
+    if (b) setProvider(PROVIDERS.find(p => p.id === b.dataset.engine), false);
+  });
+
   function renderProvider() {
-    ico.textContent = provider.letter;
-    nameEl.textContent = provider.name;
+    // a bang typed in the box temporarily takes over the chip
+    const bang = parseBang(input.value.trim());
+    btn.classList.toggle('bang-on', !!bang);
+    ico.textContent = bang ? bangLetter(bang.b) : provider.letter;
+    nameEl.textContent = bang ? bang.b.name : provider.name;
     for (const li of menu.children) {
       li.setAttribute('aria-selected', li.dataset.id === provider.id ? 'true' : 'false');
     }
+    for (const b of engineOpts.children) b.classList.toggle('active', b.dataset.engine === provider.id);
   }
 
-  // build the dropdown
+  function setProvider(p, refocus = true) {
+    if (!p) return;
+    provider = p;
+    store('home:provider', p.id);
+    renderProvider();
+    close();
+    if (refocus) {
+      input.focus();
+      if (input.value.trim()) onInput(); // re-ask the new engine for suggestions
+    }
+  }
+
   const CHECK = '<svg class="check" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5 9-10" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   for (const p of PROVIDERS) {
     const li = document.createElement('li');
     li.dataset.id = p.id;
     li.setAttribute('role', 'option');
-    li.innerHTML = `<span class="provider-ico">${p.letter}</span><span>${p.name}</span>${CHECK}`;
-    li.addEventListener('click', () => {
-      provider = p;
-      try { localStorage.setItem('home:provider', p.id); } catch (e) { }
-      renderProvider();
-      close();
-      closeSuggestions();
-      input.focus();
-    });
+    li.innerHTML = `<span class="provider-ico">${p.letter}</span><span>${p.name}</span><span class="menu-bang">!${PROVIDER_BANG[p.id] || ''}</span>${CHECK}`;
+    li.addEventListener('click', () => setProvider(p));
     menu.appendChild(li);
   }
-  renderProvider();
 
-  function open() { wrap.classList.add('open'); btn.setAttribute('aria-expanded', 'true'); }
+  let menuIdx = -1;
+  function renderMenuActive() {
+    [...menu.children].forEach((li, i) => li.classList.toggle('active', i === menuIdx));
+  }
+  function open() {
+    wrap.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    menuIdx = PROVIDERS.indexOf(provider);
+    renderMenuActive();
+  }
   function close() { wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
   const isOpen = () => wrap.classList.contains('open');
 
   btn.addEventListener('click', e => { e.stopPropagation(); isOpen() ? close() : open(); });
+  btn.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isOpen()) { open(); return; }
+      const n = PROVIDERS.length;
+      menuIdx = (menuIdx + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+      renderMenuActive();
+    } else if ((e.key === 'Enter' || e.key === ' ') && isOpen() && menuIdx >= 0) {
+      e.preventDefault();
+      setProvider(PROVIDERS[menuIdx]);
+    } else if (e.key === 'Escape' && isOpen()) {
+      e.preventDefault();
+      close();
+    }
+  });
   document.addEventListener('click', e => { if (!wrap.contains(e.target)) close(); });
+  btn.title = 'Search engine — Alt+↑/↓ in the box switches it';
+  renderProvider();
 
-  function submit() {
-    const q = input.value.trim();
-    if (!q) { input.focus(); return; }
-    // omnibox: URL opens directly…
-    if (looksLikeUrl(q)) {
-      closeSuggestions();
-      location.href = normalizeUrl(q);
-      return;
-    }
-    // …and a pure math expression shows its result card, copied for you
-    const c = tryCalc(q);
-    if (c) {
-      suggestQuery = q;
-      suggestItems = [];
-      urlEntry = null;
-      calcEntry = c;
-      suggestActive = -1;
-      searchEl.classList.add('suggest-open');
-      renderSuggestions();
-      copyCalc();
-      return;
-    }
+  /* ---------- navigation ---------- */
+
+  // mode: 'same' (this tab), 'new' (foreground tab), 'bg' (background tab);
+  // undefined follows the Open setting
+  function navigate(url, mode) {
     closeSuggestions();
-    location.href = provider.url + encodeURIComponent(q);
+    if (!mode) mode = openPref();
+    if (mode === 'same') { location.href = url; return; }
+    const api = tabsApi();
+    if (api && api.tabs.create) api.tabs.create({ url, active: mode !== 'bg' });
+    else window.open(url, '_blank', 'noopener');
+    input.value = '';
+    updatePhVisibility();
+    renderProvider();
   }
 
-  document.getElementById('submit').addEventListener('click', submit);
+  // Ctrl/Cmd/middle click → background tab, Shift click → new tab
+  const mouseMode = e => (e.ctrlKey || e.metaKey || e.button === 1 ? 'bg' : e.shiftKey ? 'new' : undefined);
+  // Ctrl/Cmd/Alt+Enter → new tab (like the omnibox), Shift+Enter → background
+  const keyMode = e => (e.ctrlKey || e.metaKey || e.altKey ? 'new' : e.shiftKey ? 'bg' : undefined);
+
+  // the one place a typed query turns into a destination
+  function go(text, mode) {
+    const q = text.trim();
+    if (!q) return;
+    remember(q);
+    const bang = parseBang(q);
+    if (bang) return navigate(bangUrl(bang.b, bang.q), mode);
+    if (looksLikeUrl(q)) return navigate(normalizeUrl(q), mode);
+    navigate(provider.url + encodeURIComponent(q), mode);
+  }
+
+  // a picked suggestion always searches (even if it looks like a domain),
+  // through the bang that was active when it was offered
+  function searchTerm(s, bang, mode) {
+    remember(bang ? `!${bang.key} ${s}` : s);
+    navigate(bang ? bangUrl(bang, s) : provider.url + encodeURIComponent(s), mode);
+  }
+
+  function submit(mode) {
+    const q = input.value.trim();
+    if (!q) { input.focus(); return; }
+    const calc = parseBang(q) ? null : tryCalc(q);
+    if (calc && !looksLikeUrl(q)) {
+      // a pure math expression shows its result card, copied for you
+      baseQuery = input.value;
+      show(compose(q, extrasFor(q)));
+      copyCalc(calc);
+      return;
+    }
+    go(q, mode);
+  }
+
+  document.getElementById('submit').addEventListener('click', e => submit(mouseMode(e)));
 
   /* ---------- vanishing placeholder ---------- */
 
   const PLACEHOLDERS = [
     'Search the web…',
-    "Try 'weather tomorrow'",
+    "Try '!yt lofi beats'",
     'Paste a link — Enter opens it',
-    'Ask Perplexity anything…',
-    "Type 'github.com' and hit Enter",
-    'Search privately with DuckDuckGo',
+    "Type 'sqrt(2) * pi' for instant math",
+    'Ctrl+Enter opens results in a new tab',
+    "End with '!w' to search Wikipedia",
+    'Alt+↑/↓ switches the search engine',
   ];
   const phEl = document.getElementById('vanish-ph');
   let phIdx = 0, phBusy = false;
@@ -2099,6 +2716,11 @@ const bgApi = (function background() {
   function updatePhVisibility() {
     const empty = input.value === '';
     if (empty) phApply();
+    else if (phBusy) {
+      // a hint mid-swap would animate back over the typed text
+      phEl.getAnimations().forEach(a => a.cancel());
+      phBusy = false;
+    }
     phEl.style.opacity = empty ? '1' : '0';
   }
 
@@ -2122,26 +2744,125 @@ const bgApi = (function background() {
 
   function phTick() {
     if (input.value === '' && !phBusy) phNext();
-    setTimeout(phTick, 3000);
+    setTimeout(phTick, 3500);
   }
 
   // the animated overlay takes over from the static placeholder attribute
   input.placeholder = '';
   phApply();
   phEl.style.opacity = '1';
-  if (!phReduced) setTimeout(phTick, 3000);
+  if (!phReduced) setTimeout(phTick, 3500);
 
-  /* ---------- autocomplete ---------- */
+  /* ---------- calculator ---------- */
+
+  // A tiny recursive-descent evaluator — no eval/Function. Supports + - * / ^,
+  // implicit multiplication (2pi, 3(4+1)), "x" as times between numbers,
+  // postfix % (percent), "15% of 80", constants pi/e/tau and common functions.
+  const CALC_FUNCS = {
+    sqrt: Math.sqrt, cbrt: Math.cbrt, abs: Math.abs, round: Math.round, floor: Math.floor, ceil: Math.ceil,
+    ln: Math.log, log: Math.log10, log2: Math.log2, exp: Math.exp,
+    sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos, atan: Math.atan,
+  };
+  const CALC_CONSTS = { pi: Math.PI, e: Math.E, tau: Math.PI * 2 };
+
+  function tryCalc(q) {
+    const shown = q.trim().replace(/=\s*$/, '').trim().replace(/\s+/g, ' ');
+    let s = shown.replace(/[×✕]/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/,/g, '');
+    if (!s || s.length > 80) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return null; // an ISO date, not a subtraction
+    s = s.replace(/(\d+(?:\.\d+)?)\s*%\s*of\s+/gi, '($1/100)*');
+
+    const toks = [];
+    for (let i = 0; i < s.length;) {
+      const rest = s.slice(i);
+      if (/^\s/.test(rest)) { i++; continue; }
+      let m;
+      if ((m = /^(\d+\.?\d*|\.\d+)/.exec(rest))) { toks.push({ t: 'n', v: parseFloat(m[0]) }); i += m[0].length; continue; }
+      if ((m = /^(?:log2|[a-z]+)/i.exec(rest))) {
+        const id = m[0].toLowerCase();
+        const prev = toks[toks.length - 1];
+        if (id === 'x' && prev && (prev.t === 'n' || prev.v === ')')) toks.push({ t: 'op', v: '*' });
+        else if (id in CALC_FUNCS || id in CALC_CONSTS) toks.push({ t: 'id', v: id });
+        else return null;
+        i += m[0].length;
+        continue;
+      }
+      if (rest.startsWith('**')) { toks.push({ t: 'op', v: '^' }); i += 2; continue; }
+      if ('+-*/^%()'.includes(rest[0])) { toks.push({ t: 'op', v: rest[0] }); i++; continue; }
+      return null;
+    }
+
+    let pos = 0, work = false;
+    const peek = () => toks[pos];
+    const isOp = (v) => peek() && peek().t === 'op' && peek().v === v;
+    const fail = () => { throw new Error('calc'); };
+
+    function expr() {
+      let v = term();
+      while (isOp('+') || isOp('-')) { const o = toks[pos++].v; work = true; const r = term(); v = o === '+' ? v + r : v - r; }
+      return v;
+    }
+    function term() {
+      let v = unary();
+      for (;;) {
+        if (isOp('*') || isOp('/')) { const o = toks[pos++].v; work = true; const r = unary(); v = o === '*' ? v * r : v / r; }
+        else if (peek() && (peek().t === 'id' || peek().t === 'n' || isOp('('))) { work = true; v *= unary(); } // implicit ×
+        else return v;
+      }
+    }
+    function unary() {
+      if (isOp('-')) { pos++; return -unary(); }
+      if (isOp('+')) { pos++; return unary(); }
+      return power();
+    }
+    function power() {
+      const b = postfix();
+      if (isOp('^')) { pos++; work = true; return b ** unary(); }
+      return b;
+    }
+    function postfix() {
+      let v = primary();
+      while (isOp('%')) { pos++; work = true; v /= 100; }
+      return v;
+    }
+    function primary() {
+      const tk = toks[pos++];
+      if (!tk) fail();
+      if (tk.t === 'n') return tk.v;
+      if (tk.t === 'op' && tk.v === '(') {
+        const v = expr();
+        if (!isOp(')')) fail();
+        pos++;
+        return v;
+      }
+      if (tk.t === 'id') {
+        if (tk.v in CALC_CONSTS) return CALC_CONSTS[tk.v];
+        work = true;
+        return CALC_FUNCS[tk.v](isOp('(') ? primary() : unary());
+      }
+      return fail();
+    }
+
+    try {
+      const v = expr();
+      if (pos !== toks.length || !work || typeof v !== 'number' || !isFinite(v)) return null;
+      return { expr: shown, value: Math.round(v * 1e10) / 1e10 };
+    } catch (e) { return null; }
+  }
+
+  /* ---------- omnibox helpers ---------- */
 
   const SUGGEST_MAX = 8;
   const MAG = '<span class="mag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>';
   const GLOBE = '<span class="mag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><ellipse cx="12" cy="12" rx="4" ry="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18" stroke="currentColor" stroke-width="2"/></svg></span>';
+  const CLOCK = '<span class="mag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 
   function looksLikeUrl(t) {
     if (!t || /\s/.test(t)) return false;
     const s = t.replace(/^https?:\/\//i, '');
     // host with a dot (or localhost / IP), optional port, optional path
-    return /^(localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)+)(:\d+)?(?:[\/?#].*)?$/i.test(s);
+    return /^(localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)+)(:\d+)?(?:[\/?#].*)?$/i.test(s)
+      && !/^\d+(\.\d+)+$/.test(s); // "3.14" / "1.5.2" are numbers, not hosts
   }
 
   function normalizeUrl(t) {
@@ -2149,23 +2870,13 @@ const bgApi = (function background() {
     return /^https?:\/\//i.test(s) ? s : 'https://' + s;
   }
 
-  // safe math evaluator for the calculator row: digits and math tokens only
-  function tryCalc(q) {
-    let s = q.split('=')[0].trim().replace(/×/g, '*').replace(/÷/g, '/').replace(/,/g, '');
-    if (!s || s.length > 60) return null;
-    if (!/^[0-9+\-*/(). ^%\ssqrtpi]+$/i.test(s)) return null; // math chars only
-    if (!/\d/.test(s)) return null;
-    if (!/[+*/^%-]/.test(s) && !/^sqrt/i.test(s)) return null; // needs an operator
-    const js = s.replace(/\^/g, '**').replace(/sqrt/ig, 'Math.sqrt').replace(/\bpi\b/ig, 'Math.PI');
-    if (!/^(?:Math\.(?:sqrt|PI)|[\d+\-*/().\s])+$/.test(js)) return null;
-    try {
-      const v = Function('"use strict"; return (' + js + ')')();
-      if (typeof v !== 'number' || !isFinite(v)) return null;
-      return { expr: s, value: Math.round(v * 1e10) / 1e10 };
-    } catch (e) { return null; }
-  }
+  /* ---------- suggestions ---------- */
 
-  let suggestItems = [], urlEntry = null, calcEntry = null, suggestActive = -1, suggestQuery = '', suggestReqId = 0, suggestTimer = 0;
+  // rows: { type, text, fill (echoed into the box on ↑/↓), run(mode), ... }
+  //   head (label, not selectable) · calc · bang · bangpick · url · tab ·
+  //   mark (bookmark) · history · sug (remote suggestion)
+  let rows = [], active = -1, baseQuery = '', reqId = 0, suggestTimer = 0;
+  let extras = { q: '', remote: [], tabs: [], marks: [] };
   const suggestCache = new Map();
 
   const suggestOpenState = () => searchEl.classList.contains('suggest-open');
@@ -2174,10 +2885,123 @@ const bgApi = (function background() {
     clearTimeout(suggestTimer);
     searchEl.classList.remove('suggest-open');
     suggestEl.innerHTML = '';
-    suggestItems = [];
-    urlEntry = null;
-    calcEntry = null;
-    suggestActive = -1;
+    rows = [];
+    active = -1;
+  }
+
+  function show(list) {
+    rows = list;
+    active = -1;
+    if (rows.some(r => r.type !== 'head')) {
+      searchEl.classList.add('suggest-open');
+      renderSuggestions();
+    } else {
+      closeSuggestions();
+    }
+  }
+
+  // assemble every row kind for a query; network results arrive via `ex`
+  function compose(q, ex = {}) {
+    const out = [];
+    if (!q) {
+      const hist = historyOn() ? loadHistory().slice(0, 6) : [];
+      if (hist.length) {
+        out.push({ type: 'head', text: 'Recent searches' });
+        for (const h of hist) out.push({ type: 'history', text: h.q, fill: h.q, run: m => go(h.q, m) });
+      }
+      return out;
+    }
+
+    // "!" + a partial key → pick a bang
+    const bm = q.match(/^!(\S*)$/);
+    if (bm) {
+      const k = bm[1].toLowerCase();
+      const list = BANGS.filter(b => b.key.startsWith(k) || (b.alias || []).some(a => a.startsWith(k)) || b.name.toLowerCase().startsWith(k));
+      for (const b of list.slice(0, 8)) {
+        out.push({
+          type: 'bangpick', b, text: b.name, fill: `!${b.key} `,
+          run: () => { input.value = `!${b.key} `; onInput(); },
+        });
+      }
+      if (out.length) return out;
+    }
+
+    const bang = parseBang(q);
+    const term = bang ? bang.q : q;
+    const calc = bang ? null : tryCalc(q);
+    if (calc) out.push({ type: 'calc', calc, text: `${calc.expr} = ${calc.value}`, fill: `${calc.expr} = ${calc.value}`, run: () => copyCalc(calc) });
+    if (bang) out.push({ type: 'bang', b: bang.b, text: term, fill: q, run: m => go(q, m) });
+    else if (looksLikeUrl(q)) out.push({ type: 'url', text: normalizeUrl(q), fill: q, run: m => go(q, m) });
+
+    const seenUrls = new Set();
+    for (const t of ex.tabs || []) {
+      seenUrls.add(t.url);
+      out.push({ type: 'tab', text: t.title || hostOf(t.url), meta: hostOf(t.url), fav: t.fav, fill: t.url, run: () => openStripItem(t) });
+    }
+    for (const b of ex.marks || []) {
+      if (seenUrls.has(b.url)) continue;
+      out.push({ type: 'mark', text: b.title || hostOf(b.url), meta: hostOf(b.url), fav: b.fav, fill: b.url, run: m => navigate(b.url, m) });
+    }
+
+    const seen = new Set();
+    for (const h of historyMatches(q, 3)) {
+      seen.add(h.toLowerCase());
+      out.push({ type: 'history', text: h, fill: h, run: m => go(h, m) });
+    }
+    let n = 0;
+    for (const s of ex.remote || []) {
+      const low = s.toLowerCase();
+      const full = bang ? `!${bang.b.key} ${s}`.toLowerCase() : low;
+      if (seen.has(full)) continue;
+      seen.add(full);
+      if (++n > SUGGEST_MAX) break;
+      out.push({ type: 'sug', text: s, hl: term, fill: bang ? `!${bang.b.key} ${s}` : s, run: m => searchTerm(s, bang && bang.b, m) });
+    }
+    return out;
+  }
+
+  // network-free stand-in while a fetch is in flight: last results that still
+  // match, so the list narrows smoothly instead of blinking empty
+  function extrasFor(q) {
+    if (extras.q === q) return extras;
+    const bang = parseBang(q);
+    const term = (bang ? bang.q : q).toLowerCase();
+    const kind = bang ? (bang.b.suggest || 'google') : (provider.suggest || 'google');
+    const cached = suggestCache.get(kind + '|' + term);
+    const low = q.toLowerCase();
+    const hit = x => (x.title || '').toLowerCase().includes(low) || x.url.toLowerCase().includes(low);
+    return {
+      q: null,
+      remote: cached || extras.remote.filter(s => s.toLowerCase().startsWith(term)),
+      tabs: bang ? [] : extras.tabs.filter(hit),
+      marks: bang ? [] : extras.marks.filter(hit),
+    };
+  }
+
+  function onInput() {
+    updatePhVisibility();
+    renderProvider();
+    clearTimeout(suggestTimer);
+    baseQuery = input.value;
+    const q = input.value.trim();
+    if (!q) { closeSuggestions(); return; }
+    show(compose(q, extrasFor(q)));
+    if (q.length >= 2 || q.startsWith('!')) suggestTimer = setTimeout(() => fetchExtras(q), 130);
+  }
+
+  async function fetchExtras(q) {
+    const id = ++reqId;
+    const bang = parseBang(q);
+    const term = bang ? bang.q : q;
+    const picking = /^!\S*$/.test(q);
+    const [remote, tabs, marks] = await Promise.all([
+      suggestOn() && !picking && term.length >= 2 ? remoteSuggestions(term, bang ? (bang.b.suggest || 'google') : (provider.suggest || 'google')) : [],
+      bang || picking ? [] : matchTabs(q),
+      bang || picking ? [] : matchBookmarks(q),
+    ]);
+    if (id !== reqId || input.value.trim() !== q) return; // superseded
+    extras = { q, remote, tabs, marks };
+    show(compose(q, extras));
   }
 
   function parseSuggestions(data) {
@@ -2192,12 +3016,9 @@ const bgApi = (function background() {
     return [];
   }
 
-  async function requestSuggestions(q) {
-    const reqId = ++suggestReqId;
-    const kind = provider.suggest || 'google';
+  async function remoteSuggestions(q, kind) {
     const key = kind + '|' + q.toLowerCase();
-    if (suggestCache.has(key)) { apply(q, suggestCache.get(key)); return; }
-
+    if (suggestCache.has(key)) return suggestCache.get(key);
     let items = [];
     try {
       items = await fetchSuggestions(q, kind);
@@ -2206,24 +3027,9 @@ const bgApi = (function background() {
       // fall back to Google's JSONP suggest endpoint, which works from any origin
       try { items = parseSuggestions(await jsonpSuggestions(q)).slice(0, SUGGEST_MAX); } catch (err2) { items = []; }
     }
-    if (suggestCache.size > 120) suggestCache.clear();
+    if (suggestCache.size > 150) suggestCache.clear();
     suggestCache.set(key, items);
-    if (reqId === suggestReqId) apply(q, items);
-
-    function apply(qq, list) {
-      if (input.value.trim().toLowerCase() !== qq.toLowerCase()) return;
-      suggestQuery = qq;
-      suggestItems = list;
-      calcEntry = tryCalc(qq);
-      urlEntry = looksLikeUrl(qq) ? normalizeUrl(qq) : null;
-      suggestActive = -1;
-      if (list.length || urlEntry || calcEntry) {
-        searchEl.classList.add('suggest-open');
-        renderSuggestions();
-      } else {
-        closeSuggestions();
-      }
-    }
+    return items;
   }
 
   async function fetchSuggestions(q, kind) {
@@ -2259,115 +3065,191 @@ const bgApi = (function background() {
     });
   }
 
+  // open tabs whose title/URL match — "switch to tab", like the omnibox
+  async function matchTabs(q) {
+    const api = tabsApi();
+    if (!api || q.length < 2) return [];
+    try {
+      const low = q.toLowerCase();
+      const selfPrefix = location.origin + '/';
+      const tabs = await api.tabs.query({});
+      return tabs
+        .filter(t => t.url && !t.url.startsWith(selfPrefix) && !/^chrome:\/\/newtab\/?$/.test(t.url)
+          && ((t.title || '').toLowerCase().includes(low) || t.url.toLowerCase().includes(low)))
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
+        .slice(0, 2)
+        .map(t => ({ title: t.title, url: t.url, fav: t.favIconUrl || faviconFor(t.url), tabId: t.id, windowId: t.windowId }));
+    } catch (e) { return []; }
+  }
+
+  async function matchBookmarks(q) {
+    const api = tabsApi();
+    if (!api || !api.bookmarks || !api.bookmarks.search || q.length < 2) return [];
+    try {
+      const hits = await api.bookmarks.search(q);
+      return hits
+        .filter(b => b.url && /^https?:/.test(b.url))
+        .slice(0, 3)
+        .map(b => ({ title: b.title, url: b.url, fav: faviconFor(b.url) }));
+    } catch (e) { return []; }
+  }
+
+  function tagEl(text, extra) {
+    const tag = document.createElement('span');
+    tag.className = 'open-tag' + (extra ? ' ' + extra : '');
+    tag.textContent = text;
+    return tag;
+  }
+
+  function textEl(text, hl) {
+    const wrapEl = document.createElement('span');
+    wrapEl.className = 's-text';
+    const low = text.toLowerCase();
+    const q = (hl || '').toLowerCase();
+    const matched = q && low.startsWith(q);
+    if (matched) {
+      const typed = document.createElement('span');
+      typed.className = 'typed';
+      typed.textContent = text.slice(0, q.length);
+      wrapEl.appendChild(typed);
+    }
+    const done = document.createElement('span');
+    done.className = 'done';
+    done.textContent = matched ? text.slice(q.length) : text;
+    wrapEl.appendChild(done);
+    return wrapEl;
+  }
+
+  function favEl(fav, label) {
+    const f = document.createElement('span');
+    f.className = 's-fav';
+    f.textContent = (label[0] || '·').toUpperCase();
+    if (fav && /^(https?:|chrome-extension:|data:)/.test(fav)) {
+      const img = document.createElement('img');
+      img.src = fav;
+      img.alt = '';
+      img.addEventListener('error', () => img.remove());
+      f.appendChild(img);
+    }
+    return f;
+  }
+
   function renderSuggestions() {
     suggestEl.innerHTML = '';
-    const q = suggestQuery.toLowerCase();
-    const rows = [];
-    if (calcEntry) rows.push({ type: 'calc', text: `${calcEntry.expr} = ${calcEntry.value}` });
-    if (urlEntry) rows.push({ type: 'url', text: urlEntry });
-    for (const s of suggestItems) rows.push({ type: 'sug', text: s });
-
+    const typed = baseQuery.trim();
     rows.forEach((row, i) => {
+      if (row.type === 'head') {
+        const h = document.createElement('div');
+        h.className = 'suggest-head';
+        h.textContent = row.text;
+        suggestEl.appendChild(h);
+        return;
+      }
       const item = document.createElement('div');
-      item.className = 'suggest-item';
+      item.className = 'suggest-item ' + row.type + '-row';
       item.setAttribute('role', 'option');
+      item.dataset.i = i;
 
       if (row.type === 'calc') {
-        item.classList.add('calc-row');
         item.innerHTML = '<span class="mag calc-sym">=</span>';
-        const text = document.createElement('span');
-        text.className = 'done';
-        text.textContent = row.text;
-        item.appendChild(text);
-        const tag = document.createElement('span');
-        tag.className = 'open-tag copy-tag';
-        tag.textContent = 'copy';
-        item.appendChild(tag);
+        const t = document.createElement('span');
+        t.className = 'done';
+        t.textContent = row.text;
+        item.append(t, tagEl('copy', 'copy-tag'));
       } else if (row.type === 'url') {
-        item.classList.add('url-row');
         item.innerHTML = GLOBE;
-        const text = document.createElement('span');
-        text.className = 'done';
-        text.textContent = row.text;
-        item.appendChild(text);
-        const tag = document.createElement('span');
-        tag.className = 'open-tag';
-        tag.textContent = 'open link';
-        item.appendChild(tag);
-      } else {
-        const low = row.text.toLowerCase();
-        const matched = q && low.startsWith(q);
-        item.innerHTML = MAG;
-        const text = document.createElement('span');
-        text.className = 's-text';
-        if (matched) {
-          const typed = document.createElement('span');
-          typed.className = 'typed';
-          typed.textContent = row.text.slice(0, q.length);
-          text.appendChild(typed);
+        const t = document.createElement('span');
+        t.className = 'done';
+        t.textContent = row.text;
+        item.append(t, tagEl('open link'));
+      } else if (row.type === 'bang' || row.type === 'bangpick') {
+        const chip = document.createElement('span');
+        chip.className = 'provider-ico';
+        chip.textContent = bangLetter(row.b);
+        const t = document.createElement('span');
+        t.className = 's-text';
+        if (row.type === 'bangpick') {
+          t.innerHTML = '<span class="done"></span>';
+          t.firstChild.textContent = row.b.name;
+        } else {
+          const d = document.createElement('span');
+          d.className = 'done';
+          d.textContent = row.text ? `Search ${row.b.name} for “${row.text}”` : `Open ${row.b.name}`;
+          t.appendChild(d);
         }
-        const done = document.createElement('span');
-        done.className = 'done';
-        done.textContent = matched ? row.text.slice(q.length) : row.text;
-        text.appendChild(done);
-        item.appendChild(text);
+        item.append(chip, t, tagEl('!' + row.b.key));
+      } else if (row.type === 'tab' || row.type === 'mark') {
+        const t = document.createElement('span');
+        t.className = 's-text';
+        t.innerHTML = '<span class="done"></span>';
+        t.firstChild.textContent = row.text;
+        const meta = document.createElement('span');
+        meta.className = 's-meta';
+        meta.textContent = row.meta;
+        item.append(favEl(row.fav, row.text), t, meta, tagEl(row.type === 'tab' ? 'switch to tab' : 'bookmark'));
+      } else if (row.type === 'history') {
+        item.innerHTML = CLOCK;
+        item.appendChild(textEl(row.text, typed));
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 's-del';
+        del.title = 'Remove from history (Shift+Del)';
+        del.setAttribute('aria-label', 'Remove from history');
+        del.textContent = '×';
+        del.addEventListener('mousedown', e => e.preventDefault());
+        del.addEventListener('click', e => { e.stopPropagation(); removeHistoryRow(i); });
+        item.appendChild(del);
+      } else {
+        item.innerHTML = MAG;
+        item.appendChild(textEl(row.text, row.hl));
       }
 
       item.addEventListener('mousedown', e => e.preventDefault()); // keep input focus
-      item.addEventListener('mouseenter', () => { suggestActive = i; renderActive(); });
-      if (row.type === 'calc') item.addEventListener('click', () => copyCalc());
-      else if (row.type === 'url') item.addEventListener('click', () => openUrl());
-      else item.addEventListener('click', () => chooseSuggestion(row.text));
+      item.addEventListener('mouseenter', () => { active = i; renderActive(); });
+      item.addEventListener('click', e => row.run(mouseMode(e)));
+      item.addEventListener('auxclick', e => { if (e.button === 1) { e.preventDefault(); row.run('bg'); } });
       suggestEl.appendChild(item);
     });
-  }
-
-  function allRows() {
-    const rows = [];
-    if (calcEntry) rows.push({ type: 'calc' });
-    if (urlEntry) rows.push({ type: 'url' });
-    for (const s of suggestItems) rows.push({ type: 'sug', text: s });
-    return rows;
-  }
-
-  function renderActive() {
-    [...suggestEl.children].forEach((el, i) => {
-      el.classList.toggle('active', i === suggestActive);
-      el.setAttribute('aria-selected', i === suggestActive ? 'true' : 'false');
-    });
-  }
-
-  function moveActive(dir) {
-    const n = suggestEl.children.length;
-    if (!n) return;
-    if (dir > 0) suggestActive = suggestActive >= n - 1 ? -1 : suggestActive + 1;
-    else suggestActive = suggestActive <= -1 ? n - 1 : suggestActive - 1;
-    const sugIdx = suggestActive - (calcEntry ? 1 : 0) - (urlEntry ? 1 : 0);
-    if (suggestActive < 0) input.value = suggestQuery;
-    else if (calcEntry && suggestActive === 0) input.value = calcEntry.expr + ' = ' + calcEntry.value;
-    else if (urlEntry && suggestActive === (calcEntry ? 1 : 0)) input.value = urlEntry;
-    else if (suggestItems[sugIdx] !== undefined) input.value = suggestItems[sugIdx];
-    const len = input.value.length;
-    input.setSelectionRange(len, len);
+    // never run past the bottom of short windows — scroll inside instead
+    suggestEl.style.maxHeight = Math.max(160, innerHeight - searchEl.getBoundingClientRect().bottom - 22) + 'px';
     renderActive();
   }
 
-  function chooseSuggestion(s) {
-    // a picked suggestion always searches, even if it looks like a domain
-    input.value = s;
-    closeSuggestions();
-    const q = input.value.trim();
-    if (!q) return;
-    location.href = provider.url + encodeURIComponent(q);
+  function removeHistoryRow(i) {
+    const row = rows[i];
+    if (!row || row.type !== 'history') return;
+    forget(row.text);
+    const q = baseQuery.trim();
+    show(compose(q, extrasFor(q)));
+    input.value = baseQuery;
   }
 
-  function openUrl() {
-    input.value = urlEntry;
-    submit();
+  function renderActive() {
+    for (const el of suggestEl.querySelectorAll('.suggest-item')) {
+      const on = +el.dataset.i === active;
+      el.classList.toggle('active', on);
+      el.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
   }
 
-  function copyCalc() {
-    copyText(String(calcEntry.value), () => {
+  function moveActive(dir) {
+    const sel = rows.map((r, i) => (r.type === 'head' ? -1 : i)).filter(i => i >= 0);
+    if (!sel.length) return;
+    let p = sel.indexOf(active);
+    if (dir > 0) p = p >= sel.length - 1 ? -1 : p + 1;
+    else p = p <= -1 ? sel.length - 1 : p - 1;
+    active = p < 0 ? -1 : sel[p];
+    input.value = active < 0 ? baseQuery : rows[active].fill;
+    const el = suggestEl.querySelector(`[data-i="${active}"]`);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+    const len = input.value.length;
+    input.setSelectionRange(len, len);
+    updatePhVisibility();
+    renderActive();
+  }
+
+  function copyCalc(calc) {
+    copyText(String(calc.value), () => {
       const tag = suggestEl.querySelector('.calc-row .copy-tag');
       if (!tag) return;
       tag.textContent = 'copied ✓';
@@ -2395,49 +3277,64 @@ const bgApi = (function background() {
     onDone();
   }
 
-  input.addEventListener('input', () => {
-    updatePhVisibility();
-    clearTimeout(suggestTimer);
-    const q = input.value.trim();
-    if (q.length < 2) { closeSuggestions(); return; }
-    // instant local rows — the calculator and URL opening need no network
-    suggestQuery = q;
-    suggestItems = [];
-    calcEntry = tryCalc(q);
-    urlEntry = looksLikeUrl(q) ? normalizeUrl(q) : null;
-    suggestActive = -1;
-    if (calcEntry || urlEntry) {
-      searchEl.classList.add('suggest-open');
-      renderSuggestions();
-    }
-    suggestTimer = setTimeout(() => requestSuggestions(q), 130);
+  input.addEventListener('input', onInput);
+
+  // recent searches appear when you click into (or ↓ in) an empty box — not
+  // on the automatic focus of a fresh tab, which would be noisy
+  input.addEventListener('mousedown', () => {
+    if (input.value === '' && !suggestOpenState()) setTimeout(() => { baseQuery = ''; show(compose('')); }, 0);
   });
+  input.addEventListener('focus', () => bgApi.setFocus(true));
+  input.addEventListener('blur', () => bgApi.setFocus(false));
 
   document.addEventListener('mousedown', e => {
     if (!searchEl.contains(e.target)) closeSuggestions();
   });
 
   input.addEventListener('keydown', e => {
+    // Alt+↑/↓ cycles the default engine without leaving the box
+    if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const n = PROVIDERS.length;
+      const i = PROVIDERS.indexOf(provider);
+      setProvider(PROVIDERS[(i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n]);
+      return;
+    }
+    if (!suggestOpenState() && e.key === 'ArrowDown') {
+      e.preventDefault();
+      baseQuery = input.value;
+      const q = input.value.trim();
+      show(compose(q, q ? extrasFor(q) : {}));
+      return;
+    }
     if (suggestOpenState()) {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); return; }
-      if (e.key === 'Enter' && suggestActive >= 0) {
+      if (e.key === 'Delete' && e.shiftKey && active >= 0 && rows[active].type === 'history') {
         e.preventDefault();
-        if (calcEntry && suggestActive === 0) copyCalc();
-        else if (urlEntry && suggestActive === (calcEntry ? 1 : 0)) openUrl();
-        else {
-          const s = suggestItems[suggestActive - (calcEntry ? 1 : 0) - (urlEntry ? 1 : 0)];
-          if (s) chooseSuggestion(s);
-        }
+        removeHistoryRow(active);
         return;
       }
-      if (e.key === 'Escape') { closeSuggestions(); return; }
+      if (e.key === 'Tab' && !e.shiftKey && active >= 0 && rows[active].type === 'bangpick') {
+        e.preventDefault(); // Tab completes a bang, like a shell
+        rows[active].run();
+        return;
+      }
+      if (e.key === 'Enter' && active >= 0) {
+        e.preventDefault();
+        rows[active].run(keyMode(e));
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (active >= 0) input.value = baseQuery;
+        closeSuggestions();
+        return;
+      }
     }
-    if (e.key === 'Enter') submit();
+    if (e.key === 'Enter') { e.preventDefault(); submit(keyMode(e)); }
     if (e.key === 'Escape') {
       if (isOpen()) close();
-      else if (suggestOpenState()) closeSuggestions();
-      else if (input.value) { input.value = ''; closeSuggestions(); updatePhVisibility(); }
+      else if (input.value) { input.value = ''; closeSuggestions(); updatePhVisibility(); renderProvider(); }
       else input.blur();
     }
   });
@@ -2445,7 +3342,7 @@ const bgApi = (function background() {
   // global shortcuts: "/" or Ctrl/Cmd+K focuses the box (not while typing
   // elsewhere, and not when the input is hidden in settings)
   document.addEventListener('keydown', e => {
-    const inField = document.activeElement instanceof HTMLInputElement;
+    const inField = isTypingTarget(document.activeElement);
     const inputHidden = document.body.classList.contains('no-input');
     if (e.key === '/' && document.activeElement !== input && !inField && !inputHidden) {
       e.preventDefault();
@@ -2462,11 +3359,27 @@ const bgApi = (function background() {
   // clock pill
   const clock = document.getElementById('clock');
   const date = document.getElementById('date');
+  const clockOpts = document.getElementById('clock-opts');
+  const clockFmt = () => { const v = loadStored('home:clock'); return v === '12' || v === 'sec' ? v : '24'; };
   function tick() {
     const now = new Date();
-    clock.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const fmt = clockFmt();
+    clock.textContent = fmt === '12'
+      ? now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
+      : now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false, ...(fmt === 'sec' ? { second: '2-digit' } : {}) });
     date.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   }
+  function renderClockOpts() {
+    for (const b of clockOpts.children) b.classList.toggle('active', b.dataset.clock === clockFmt());
+  }
+  clockOpts.addEventListener('click', e => {
+    const b = e.target.closest('button[data-clock]');
+    if (!b) return;
+    store('home:clock', b.dataset.clock);
+    renderClockOpts();
+    tick();
+  });
+  renderClockOpts();
   tick();
   setInterval(tick, 1000);
 
