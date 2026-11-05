@@ -299,7 +299,7 @@ const bgApi = (function background() {
       if (d < POINTER_R) b += (1 - d / POINTER_R) ** 2 * 0.55 * pointer.k;
     }
     for (const r of ripples) {
-      const age = (now - r.t0) / 1000;
+      const age = Math.max(0, now - r.t0) / 1000; // frame time can precede the click
       const ring = age * 520;
       const d = Math.abs(Math.hypot(x - r.x, y - r.y) - ring);
       if (d < 26) b += (1 - d / 26) * 0.7 * Math.max(0, 1 - age / 1.4);
@@ -644,7 +644,7 @@ const bgApi = (function background() {
       ctx.stroke(path);
     }
     for (const r of ripples) {
-      const age = (t - r.t0) / 1000;
+      const age = Math.max(0, t - r.t0) / 1000; // frame time can precede the click
       ctx.strokeStyle = rgba(pal.gridBright, Math.max(0, 0.5 * (1 - age / 1.4)));
       ctx.lineWidth = 2;
       ctx.beginPath();
