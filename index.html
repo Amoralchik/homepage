@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Home</title>
-  <meta name="description" content="A tiny pixel world on your new tab: day/night cycle, 10 backgrounds, widgets and multi-provider search. Free and open source; everything stays on your machine." />
+  <meta name="description" content="A tiny pixel world on your new tab: day/night cycle, 11 backgrounds, widgets and multi-provider search. Free and open source; everything stays on your machine." />
   <script>
     // The extension keeps its short tab title; the served demo (Pages, file://) gets the findable one.
     if (location.protocol !== 'chrome-extension:') {
@@ -80,125 +80,192 @@
     </svg>
   </button>
 
-  <div class="settings" id="settings">
-    <label class="set-row">
-      <span class="set-name">Text</span>
-      <input class="set-input" id="set-label" type="text" maxlength="24" spellcheck="false"
-             autocomplete="off" placeholder="home" aria-label="Pill text" />
-    </label>
-    <div class="set-row">
-      <span class="set-name">Phase</span>
-      <div class="phase-opts" id="phase-opts" role="group" aria-label="Freeze time of day">
-        <button type="button" data-phase="auto">Auto</button>
-        <button type="button" data-phase="morning">Morning</button>
-        <button type="button" data-phase="day">Day</button>
-        <button type="button" data-phase="evening">Evening</button>
-        <button type="button" data-phase="night">Night</button>
+  <div class="settings" id="settings" role="dialog" aria-label="Settings">
+    <div class="set-tabs" id="set-tabs" role="tablist" aria-label="Settings sections">
+      <button type="button" role="tab" data-tab="look">Look</button>
+      <button type="button" role="tab" data-tab="layout">Layout</button>
+      <button type="button" role="tab" data-tab="search">Search</button>
+      <button type="button" role="tab" data-tab="weather">Weather</button>
+    </div>
+
+    <div class="set-pane" data-pane="look" role="tabpanel">
+      <div class="set-row">
+        <span class="set-name">Theme</span>
+        <div class="phase-opts theme-opts" id="theme-opts" role="group" aria-label="Celestial theme">
+          <button type="button" data-theme="classic"><i class="sw" style="--sw:#6c8cff"></i>Classic</button>
+          <button type="button" data-theme="dark"><i class="sw" style="--sw:#3a3a3a"></i>Dark</button>
+          <button type="button" data-theme="bright"><i class="sw" style="--sw:#f2f2f2"></i>Bright</button>
+          <button type="button" data-theme="cyberpunk"><i class="sw" style="--sw:linear-gradient(135deg,#e0189a 50%,#00fff0 50%)"></i>Cyber</button>
+          <button type="button" data-theme="violet"><i class="sw" style="--sw:#9257f0"></i>Violet</button>
+          <button type="button" data-theme="red"><i class="sw" style="--sw:#e05336"></i>Red</button>
+          <button type="button" data-theme="amber"><i class="sw" style="--sw:#f0a830"></i>Amber</button>
+          <button type="button" data-theme="green"><i class="sw" style="--sw:#2fa869"></i>Green</button>
+          <button type="button" data-theme="teal"><i class="sw" style="--sw:#22b3a8"></i>Teal</button>
+          <button type="button" data-theme="blue"><i class="sw" style="--sw:#3f9af0"></i>Blue</button>
+          <button type="button" data-theme="rose"><i class="sw" style="--sw:#e05a94"></i>Rose</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Phase</span>
+        <div class="phase-opts" id="phase-opts" role="group" aria-label="Freeze time of day">
+          <button type="button" data-phase="auto">Auto</button>
+          <button type="button" data-phase="morning">Morning</button>
+          <button type="button" data-phase="day">Day</button>
+          <button type="button" data-phase="evening">Evening</button>
+          <button type="button" data-phase="night">Night</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Bg</span>
+        <div class="phase-opts" id="bg-opts" role="group" aria-label="Background style">
+          <button type="button" data-bg="scene">Scene</button>
+          <button type="button" data-bg="aurora">Aurora</button>
+          <button type="button" data-bg="grid">Grid</button>
+          <button type="button" data-bg="lamp">Lamp</button>
+          <button type="button" data-bg="noise">Noise</button>
+          <button type="button" data-bg="particles">Particles</button>
+          <button type="button" data-bg="retro">Retro</button>
+          <button type="button" data-bg="shooting">Shooting</button>
+          <button type="button" data-bg="grain">Grain</button>
+          <button type="button" data-bg="halftone">Halftone</button>
+          <button type="button" data-bg="photo">Photo</button>
+        </div>
+      </div>
+      <div class="set-row" id="wall-row">
+        <span class="set-name">Wall</span>
+        <div class="wall-actions">
+          <button type="button" class="wall-btn" id="wall-open">Wallpaper…</button>
+          <button type="button" class="wall-btn" id="wall-clear">Clear</button>
+        </div>
+      </div>
+      <div class="set-row" id="dots-row">
+        <span class="set-name">Dots</span>
+        <input type="range" id="dot-size" class="dot-slider" min="8" max="26" step="2" value="14" aria-label="Halftone dot size" />
+        <span class="set-val" id="dot-size-val">14</span>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Motion</span>
+        <div class="phase-opts" id="motion-opts" role="group" aria-label="Pointer effects">
+          <button type="button" data-motion="on">Pointer glow</button>
+          <button type="button" data-motion="off">Off</button>
+        </div>
       </div>
     </div>
-    <div class="set-row">
-      <span class="set-name">Theme</span>
-      <div class="phase-opts" id="theme-opts" role="group" aria-label="Celestial theme">
-        <button type="button" data-theme="classic">Classic</button>
-        <button type="button" data-theme="dark">Dark</button>
-        <button type="button" data-theme="bright">Bright</button>
-        <button type="button" data-theme="cyberpunk">Cyber</button>
-        <button type="button" data-theme="violet">Violet</button>
-        <button type="button" data-theme="red">Red</button>
-        <button type="button" data-theme="green">Green</button>
-        <button type="button" data-theme="blue">Blue</button>
-        <button type="button" data-theme="rose">Rose</button>
+
+    <div class="set-pane" data-pane="layout" role="tabpanel" hidden>
+      <label class="set-row">
+        <span class="set-name">Text</span>
+        <input class="set-input" id="set-label" type="text" maxlength="24" spellcheck="false"
+               autocomplete="off" placeholder="home" aria-label="Pill text" />
+      </label>
+      <div class="set-row">
+        <span class="set-name">Clock</span>
+        <div class="phase-opts" id="clock-opts" role="group" aria-label="Clock format">
+          <button type="button" data-clock="24">24h</button>
+          <button type="button" data-clock="12">12h</button>
+          <button type="button" data-clock="sec">24h + sec</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Show</span>
+        <div class="phase-opts" id="show-opts" role="group" aria-label="Show or hide elements">
+          <button type="button" data-show="celestial">Planet</button>
+          <button type="button" data-show="stars">Stars</button>
+          <button type="button" data-show="input">Input</button>
+          <button type="button" data-show="time">Time</button>
+          <button type="button" data-show="help">Help</button>
+          <button type="button" data-show="pulse">Pulse</button>
+        </div>
+      </div>
+      <div class="set-row" id="tabs-row">
+        <span class="set-name">Bar</span>
+        <div class="phase-opts" id="tabs-opts" role="group" aria-label="Quick bar on top">
+          <button type="button" data-tabs="off">Off</button>
+          <button type="button" data-tabs="top">Most used</button>
+          <button type="button" data-tabs="recent">Recent</button>
+          <button type="button" data-tabs="bookmarks">Bookmarks</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Reset</span>
+        <button type="button" class="wall-btn" id="reset-all">Reset all settings…</button>
       </div>
     </div>
-    <div class="set-row">
-      <span class="set-name">Bg</span>
-      <div class="phase-opts" id="bg-opts" role="group" aria-label="Background style">
-        <button type="button" data-bg="scene">Scene</button>
-        <button type="button" data-bg="aurora">Aurora</button>
-        <button type="button" data-bg="grid">Grid</button>
-        <button type="button" data-bg="lamp">Lamp</button>
-        <button type="button" data-bg="noise">Noise</button>
-        <button type="button" data-bg="particles">Particles</button>
-        <button type="button" data-bg="retro">Retro</button>
-        <button type="button" data-bg="shooting">Shooting</button>
-        <button type="button" data-bg="grain">Grain</button>
-        <button type="button" data-bg="halftone">Halftone</button>
+
+    <div class="set-pane" data-pane="search" role="tabpanel" hidden>
+      <div class="set-row">
+        <span class="set-name">Engine</span>
+        <div class="phase-opts" id="engine-opts" role="group" aria-label="Default search engine"></div>
       </div>
-    </div>
-    <div class="set-row">
-      <span class="set-name">Wall</span>
-      <div class="wall-actions">
-        <button type="button" class="wall-btn" id="wall-open">Wallpaper…</button>
-        <button type="button" class="wall-btn" id="wall-clear">Clear</button>
+      <div class="set-row">
+        <span class="set-name">Open</span>
+        <div class="phase-opts" id="open-opts" role="group" aria-label="Where results open">
+          <button type="button" data-open="same">This tab</button>
+          <button type="button" data-open="new">New tab</button>
+        </div>
       </div>
-    </div>
-    <div class="set-row">
-      <span class="set-name">Dots</span>
-      <input type="range" id="dot-size" class="dot-slider" min="8" max="26" step="2" value="14" aria-label="Halftone dot size" />
-      <span class="set-val" id="dot-size-val">14</span>
-    </div>
-    <div class="set-row">
-      <span class="set-name">Show</span>
-      <div class="phase-opts" id="show-opts" role="group" aria-label="Show or hide elements">
-        <button type="button" data-show="celestial">Planet</button>
-        <button type="button" data-show="stars">Stars</button>
-        <button type="button" data-show="input">Input</button>
-        <button type="button" data-show="time">Time</button>
-        <button type="button" data-show="help">Help</button>
-        <button type="button" data-show="pulse">Pulse</button>
+      <div class="set-row">
+        <span class="set-name">Suggest</span>
+        <div class="phase-opts" id="suggest-opts" role="group" aria-label="Autocomplete suggestions">
+          <button type="button" data-suggest="on">On</button>
+          <button type="button" data-suggest="off">Off</button>
+        </div>
       </div>
-    </div>
-    <div class="set-row">
-      <span class="set-name">Wx</span>
-      <div class="phase-opts" id="wx-opts" role="group" aria-label="Weather">
-        <button type="button" data-wx="on">On</button>
-        <button type="button" data-wx="off">Off</button>
+      <div class="set-row">
+        <span class="set-name">History</span>
+        <div class="phase-opts" id="history-opts" role="group" aria-label="Recent searches">
+          <button type="button" data-history="on">On</button>
+          <button type="button" data-history="off">Off</button>
+          <button type="button" class="opt-action" id="history-clear">Clear</button>
+        </div>
       </div>
+      <div class="set-bangs" id="set-bangs"></div>
     </div>
-    <div class="set-row" id="wx-loc-row">
-      <span class="set-name">Loc</span>
-      <div class="phase-opts" id="wx-loc-opts" role="group" aria-label="Weather location">
-        <button type="button" data-wxloc="auto">Auto</button>
-        <button type="button" data-wxloc="pick" id="wx-pick-btn">Pick…</button>
+
+    <div class="set-pane" data-pane="weather" role="tabpanel" hidden>
+      <div class="set-row">
+        <span class="set-name">Wx</span>
+        <div class="phase-opts" id="wx-opts" role="group" aria-label="Weather">
+          <button type="button" data-wx="on">On</button>
+          <button type="button" data-wx="off">Off</button>
+        </div>
       </div>
-    </div>
-    <div class="set-row" id="wx-city-row" hidden>
-      <span class="set-name">City</span>
-      <input class="set-input" id="wx-city-input" type="text" maxlength="40" spellcheck="false"
-             autocomplete="off" placeholder="search city…" aria-label="Weather city search" />
-    </div>
-    <div class="wx-results" id="wx-city-results" hidden></div>
-    <div class="set-row" id="wx-sky-row">
-      <span class="set-name">Sky</span>
-      <div class="phase-opts" id="wx-sky-opts" role="group" aria-label="Weather conditions">
-        <button type="button" data-wxsky="auto">Auto</button>
-        <button type="button" data-wxsky="clear">Clear</button>
-        <button type="button" data-wxsky="clouds">Clouds</button>
-        <button type="button" data-wxsky="rain">Rain</button>
-        <button type="button" data-wxsky="snow">Snow</button>
-        <button type="button" data-wxsky="storm">Storm</button>
-        <button type="button" data-wxsky="fog">Fog</button>
+      <div class="set-row" id="wx-loc-row">
+        <span class="set-name">Loc</span>
+        <div class="phase-opts" id="wx-loc-opts" role="group" aria-label="Weather location">
+          <button type="button" data-wxloc="auto">Auto</button>
+          <button type="button" data-wxloc="pick" id="wx-pick-btn">Pick…</button>
+        </div>
       </div>
-    </div>
-    <div class="set-row" id="wx-temp-row" hidden>
-      <span class="set-name">Temp</span>
-      <input class="set-input" id="wx-temp-input" type="number" step="any" inputmode="decimal"
-             aria-label="Pinned temperature" />
-    </div>
-    <div class="set-row" id="wx-units-row">
-      <span class="set-name">Units</span>
-      <div class="phase-opts" id="wx-units-opts" role="group" aria-label="Temperature units">
-        <button type="button" data-units="c">°C</button>
-        <button type="button" data-units="f">°F</button>
+      <div class="set-row" id="wx-city-row" hidden>
+        <span class="set-name">City</span>
+        <input class="set-input" id="wx-city-input" type="text" maxlength="40" spellcheck="false"
+               autocomplete="off" placeholder="search city…" aria-label="Weather city search" />
       </div>
-    </div>
-    <div class="set-row" id="tabs-row">
-      <span class="set-name">Bar</span>
-      <div class="phase-opts" id="tabs-opts" role="group" aria-label="Quick bar on top">
-        <button type="button" data-tabs="off">Off</button>
-        <button type="button" data-tabs="top">Most used</button>
-        <button type="button" data-tabs="recent">Recent</button>
-        <button type="button" data-tabs="bookmarks">Bookmarks</button>
+      <div class="wx-results" id="wx-city-results" hidden></div>
+      <div class="set-row" id="wx-sky-row">
+        <span class="set-name">Sky</span>
+        <div class="phase-opts" id="wx-sky-opts" role="group" aria-label="Weather conditions">
+          <button type="button" data-wxsky="auto">Auto</button>
+          <button type="button" data-wxsky="clear">Clear</button>
+          <button type="button" data-wxsky="clouds">Clouds</button>
+          <button type="button" data-wxsky="rain">Rain</button>
+          <button type="button" data-wxsky="snow">Snow</button>
+          <button type="button" data-wxsky="storm">Storm</button>
+          <button type="button" data-wxsky="fog">Fog</button>
+        </div>
+      </div>
+      <div class="set-row" id="wx-temp-row" hidden>
+        <span class="set-name">Temp</span>
+        <input class="set-input" id="wx-temp-input" type="number" step="any" inputmode="decimal"
+               aria-label="Pinned temperature" />
+      </div>
+      <div class="set-row" id="wx-units-row">
+        <span class="set-name">Units</span>
+        <div class="phase-opts" id="wx-units-opts" role="group" aria-label="Temperature units">
+          <button type="button" data-units="c">°C</button>
+          <button type="button" data-units="f">°F</button>
+        </div>
       </div>
     </div>
   </div>
@@ -219,14 +286,14 @@
       </div>
       <div class="wall-actions-row">
         <button type="button" class="wall-btn" id="wall-browse">Browse files…</button>
-        <button type="button" class="wall-btn" id="wall-clear">Clear wallpaper</button>
+        <button type="button" class="wall-btn" id="wall-clear-modal">Clear wallpaper</button>
         <input type="file" id="wall-input" accept="image/*" hidden />
       </div>
     </div>
   </div>
 
   <footer class="hint">
-    <span class="key">/</span> focus &nbsp;·&nbsp; <span class="key">Enter</span> search &nbsp;·&nbsp; <span class="key">Ctrl K</span> from anywhere
+    <span class="key">/</span> focus &nbsp;·&nbsp; <span class="key">Enter</span> search &nbsp;·&nbsp; <span class="key">Ctrl Enter</span> new tab &nbsp;·&nbsp; <span class="key">!yt</span> bangs &nbsp;·&nbsp; <span class="key">W</span> widgets
   </footer>
 
   <button class="mod-tab" id="mod-tab" type="button" aria-label="Toggle widget layer" aria-expanded="false">

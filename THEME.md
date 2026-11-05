@@ -204,3 +204,29 @@ pinned cond → its own key, live → `wxEffectFromCode`) and pushes it through
 
 **Known limitation:** the Show → Time toggle hides the whole pill, weather
 included — the segment rides along rather than owning its own Show entry.
+
+---
+
+# 6. Project-wide pass (2026-11-05)
+
+**Themes:** two new chromatic themes, **Amber** (`hue 183` → ~38°) and **Teal**
+(`hue 320` → ~175°), both with toned-down `sat` (0.95 / 0.82) after Teal at midday
+read as neon. The themed-surfaces block now targets
+`body[data-theme]:not([data-theme="classic"])`, so any future theme gets surface
+accord with just an accent block. On light phases, non-Classic themes derive
+`--chip-fg`/`--key-fg` from `color-mix(accent, black)` — the bright accents were tuned
+for dark glass and washed out on white. Theme buttons carry a swatch (`--sw`).
+
+**Contrast:** the dimmest tokens (`--text-3`, `--hint`, `--pill-dim`, night
+`--key-fg`) were raised in every phase; the footer hint at night was ~2.2:1.
+
+**Pulse vs focus:** the breathing border animation overrode the focus shadow, so the
+focused box looked unfocused. Focus now pauses the pulse.
+
+**Backgrounds:** pointer glow + click ripples (Scene cells, Grid spotlight stroked
+with a radial-gradient `strokeStyle`, Halftone dot swell, Particle tethers), all
+eased via `pointer.k` and skipped under reduced motion; the deferred §1 lamp
+"search-focus warmth" is implemented as `bgApi.setFocus`. New **Photo** mode: the
+wallpaper pre-rendered once at 1.06× for a Ken Burns drift, under a phase-keyed veil
+(`PHOTO_VEIL`) tinted with the sky colors plus a vignette for UI legibility. Retro gets
+a striped synthwave sun from the theme's `sunRamp` (`moonRamp` at night).

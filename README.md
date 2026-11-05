@@ -18,7 +18,24 @@ endpoint (see the note below); everything else is identical.
 | ![Lamp background](docs/screenshots/lamp.png) | ![Themed surfaces](docs/screenshots/themed.png) |
 
 Providers: **Google · DuckDuckGo · Perplexity**
-The choice is remembered (localStorage). `Enter` searches, `/` or `Ctrl+K` focuses the box.
+The choice is remembered (localStorage). `Enter` searches, `/` or `Ctrl+K` focuses the box,
+`Alt+↑/↓` switches the engine without leaving the box (the dropdown is keyboard-driven too).
+`Ctrl+Enter` (or `Alt+Enter`) opens the result in a new tab, `Shift+Enter` in a background
+tab; Ctrl/middle-click does the same on any row. Settings → Search → **Open** can make new
+tabs the default.
+
+**Bangs:** start (or end) a query with a bang to search somewhere else without switching
+the engine — `!yt lofi beats`, `rust lifetimes !so`. Typing `!` lists them (`Tab`
+completes one), and a bang alone (`!gh`) opens the site. The chip on the left switches to
+the bang's site while it's active. Built in: `!g` Google, `!d` DuckDuckGo, `!p`
+Perplexity, `!b` Bing, `!yt` YouTube, `!w` Wikipedia, `!gh` GitHub, `!r` Reddit, `!m` Maps,
+`!i` Images, `!so` Stack Overflow, `!mdn`, `!npm`, `!a` Amazon, `!tr` Translate, `!x` —
+add more in the `BANGS` array in `app.js`.
+
+**Recent searches:** what you search is remembered locally (never synced). Click into the
+empty box (or press `↓`) to see the latest; while typing, matching past searches show up
+first with a clock icon. Remove one with its `×` or `Shift+Delete`; Settings → Search has
+**History** on/off and **Clear**.
 While the search box is empty, the placeholder cycles through hint phrases
 (Velora "Vanish Input" style — it hides while you type and stays static under
 `prefers-reduced-motion`); the phrases live in the `PLACEHOLDERS` array in `app.js`.
@@ -35,33 +52,53 @@ works normally.
 `Enter` opens the site directly (`https://` is added for you). Plain text just searches.
 
 **Instant calculator:** type a math expression — `4+4`, `12*7`, `sqrt(16)`, `(2+3)*4`,
-`2^10` — and a special card shows the result with a **COPY** tag: `Enter` (or clicking
-the card) copies the answer to your clipboard. Suffix `=` is allowed (`4+4=`), as are
-`sqrt`, `pi`, `×` and `÷`. Pick a search suggestion instead if you actually wanted to
-search the expression.
+`2^10`, `3x4`, `2pi`, `15% of 80`, `sin(pi/2)`, `log2(1024)` — and a special card shows
+the result with a **COPY** tag: `Enter` (or clicking the card) copies the answer to your
+clipboard. Suffix `=` is allowed (`4+4=`), as are `×`, `÷`, `e`, `tau` and the usual
+functions (`sqrt cbrt abs round floor ceil ln log log2 exp sin cos tan asin acos atan`).
+It's a small hand-written parser — nothing is ever `eval`'d. Pick a search suggestion
+instead if you actually wanted to search the expression.
 
-**Settings:** the gear in the bottom-right corner opens a small panel where you can set
-the pill text (anything you like — your name, a project, …) and **freeze** the time of
-day to Morning / Day / Evening / Night instead of following the clock. Both are stored
-in localStorage; pick **Auto** to return to the real clock.
+**Tabs & bookmarks in the box** (extension only): typing also matches your open tabs
+(**SWITCH TO TAB** focuses it) and your bookmarks (**BOOKMARK** opens it), like Chrome's
+omnibox.
+
+**Settings:** the gear in the bottom-right corner opens a tabbed panel — **Look**
+(theme, phase, background, wallpaper, pointer effects), **Layout** (pill text, clock
+format 24h / 12h / with seconds, show/hide toggles, quick bar, reset), **Search**
+(default engine, where results open, suggestions, history, bang cheat sheet) and
+**Weather**. You can **freeze** the time of day to Morning / Day / Evening / Night
+instead of following the clock; pick **Auto** to return to the real clock. Everything is
+stored in localStorage, the panel reopens on the tab you used last, and only the knobs
+that matter for the current background are shown. **Reset all settings…** wipes it all.
 
 **Backgrounds:** the **Bg** row in settings switches the whole background style —
 **Scene** (the default pixel world), **Aurora** (drifting light blobs), **Grid**
 (clean graph paper), **Lamp** (warm light cone that follows the clock — a faint
 afterglow in the morning, full amber at night, dust motes in the beam), **Noise**
-(film grain), **Particles**
-(floating dust), **Retro** (synthwave perspective floor), **Shooting** (dense
-starfield with occasional meteors), **Grain** (vivid gradient with film grain) and
-**Halftone** (dot-matrix rendering). Every background is theme- and phase-aware,
+(film grain over a slowly breathing light), **Particles** (floating dust that links into
+faint constellations), **Retro** (synthwave floor with a striped sun sinking into the
+horizon — the moon at night), **Shooting** (dense starfield with occasional meteors),
+**Grain** (vivid gradient with film grain), **Halftone** (dot-matrix rendering) and
+**Photo** (your wallpaper itself, with a slow drift and a phase-tinted veil so it still
+dims at night). The **Grid** drifts slowly with glowing intersections.
+Every background is theme- and phase-aware,
 so Cyberpunk-Retro or Rose-Aurora look exactly like you'd hope — the Lamp is
 phase-aware only: its warm light ignores the theme picker, like a real lamp would.
 
-**Wallpaper:** the **Wall** row lets you pick an image (stored locally in
-IndexedDB, never synced anywhere) and **Halftone** renders it as glowing
-dot-matrix art — bright areas become big glowing dots, dark areas fall silent.
+**Pointer effects:** the grid, the halftone dots and the particles light up softly
+around your cursor, and clicking empty background sends a ripple through the scene. The
+Lamp warms up a little while you type. Turn it off under Look → **Motion**; it's off
+automatically with `prefers-reduced-motion`.
+
+**Wallpaper:** pick an image under **Wallpaper…** (file, drag & drop or URL — all stored
+locally in IndexedDB, never synced anywhere). **Photo** shows it as-is and **Halftone**
+renders it as glowing dot-matrix art — bright areas become big glowing dots, dark areas
+fall silent. Setting a wallpaper while another background is active switches to Photo.
 
 **Celestial themes:** in the same panel, pick a planet personality — Classic, Dark,
-Bright, **Cyberpunk**, Violet, Red (Mars), Green, Blue or Rose. The theme recolors the
+Bright, **Cyberpunk**, Violet, Red (Mars), **Amber**, Green, **Teal**, Blue or Rose (each
+button shows a color swatch). The theme recolors the
 pixel planet/sun, its glow, **the whole sky, grid and stars**, and the UI accents; the
 day/night cycle keeps running on top.
 
@@ -94,12 +131,15 @@ that exact tab; **Most used** lists your top sites, ranked by a tiny background 
 that counts tab activations and page loads — clicking one focuses the site's tab if
 it's open right now, otherwise opens it in place; **Bookmarks** mirrors your bookmarks
 bar (or your newest bookmarks if the bar is empty) — clicking one opens the site,
-focusing its tab when it's already open. Folders stay folders: they render as their own
-chips with a ▾ dropdown listing everything inside. The bar shows whatever fits the line
-and tucks the rest into a "··· more" chip; folder rows in any menu drill in with a back
-row on top. Bookmark chips borrow favicons the usage tracker has already seen, menus
-scroll with a slim custom scrollbar, and missing favicons fall back to letter chips.
-Outside the extension the bar is unavailable and the row disappears.
+focusing its tab when it's already open; Ctrl/middle-click opens it in a background tab.
+Folders keep their real nesting: they render as chips with a ▾ dropdown, subfolders
+drill in (with item counts) and a back row returns, and **Open all** opens a folder's
+bookmarks in background tabs. The bar shows whatever fits the line and tucks the rest
+into a "··· more" chip. Favicons come from Chrome's own favicon cache, with letter chips
+as the fallback. The bar is keyboard-friendly (`←/→` between chips, `↓` opens a menu,
+`↑/↓/→/←` inside it, `Esc` closes) and updates live as bookmarks and tabs change — it
+only re-renders when something actually changed. Outside the extension the bar is
+unavailable and the row disappears.
 
 **Widget layer:** press `W` (or the grid button in the bottom-left corner) to toggle a
 mod-like layer docked above the button — a HUD that hosts small persistent widgets.
@@ -136,9 +176,10 @@ anytime with `?phase=morning` / `day` / `evening` / `night` in the URL (or set
 3. Click **Load unpacked** and select this folder
 4. Open a new tab — done.
 
-The extension asks for the `tabs`, `storage`, `bookmarks` and `geolocation`
-permissions — `tabs` feeds the quick bar's Recent mode (Chrome shows this as
-"Read your browsing activity"), `bookmarks` feeds its Bookmarks mode, and
+The extension asks for the `tabs`, `storage`, `bookmarks`, `favicon` and `geolocation`
+permissions — `tabs` feeds the quick bar's Recent mode and "switch to tab" (Chrome shows
+this as "Read your browsing activity"), `bookmarks` feeds its Bookmarks mode and bookmark
+matches in the search box, `favicon` reads Chrome's local favicon cache, and
 `geolocation` is only touched by the weather readout when its location is set to
 **Auto** (decline the prompt and it falls back to an IP city lookup, or pin a city
 manually). All data stays on your machine; the only network calls weather makes
