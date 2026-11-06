@@ -531,6 +531,7 @@ const bgApi = (function background() {
       case 'shooting': return drawShooting(t, dt);
       case 'grain': return drawGrain(t, dt);
       case 'halftone': return drawHalftone(t);
+      case 'dither': return drawDither();
       case 'photo': return drawPhoto(t);
     }
   }
@@ -977,6 +978,187 @@ const bgApi = (function background() {
     }
   }
 
+  /* dither — the wallpaper as an ordered (Bayer 8×8) dither of tiny square
+     pixels in the photo's own colours, faded out towards the bottom and calmed
+     behind the centre column so the clock and search stay readable. Baked once
+     per resize / wallpaper; the cursor lifts a soft lit patch out of it. */
+  const BAYER8 = (() => {
+    const m = [[0, 2], [3, 1]];
+    let b = m;
+    while (b.length < 8) {
+      const n = b.length, nb = [];
+      for (let y = 0; y < n * 2; y++) {
+        nb.push([]);
+        for (let x = 0; x < n * 2; x++) {
+          nb[y].push(4 * b[y % n][x % n] + m[(y / n) | 0][(x / n) | 0]);
+        }
+      }
+      b = nb;
+    }
+    return b.map(r => r.map(v => (v + 0.5) / 64));
+  })();
+  const DITHER_CELL = 2;      // CSS px per dither pixel
+  const DITHER_OPACITY = 0.55;
+
+  // tiny value noise for the no-wallpaper fallback scene
+  function vnoise(seed) {
+    const g = new Float32Array(256);
+    let s = seed;
+    for (let i = 0; i < 256; i++) { s = (s * 16807) % 2147483647; g[i] = s / 2147483647; }
+    const at = (x, y) => g[((x & 15) + (y & 15) * 16) & 255];
+    const sm = t => t * t * (3 - 2 * t);
+    return (x, y) => {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = sm(x - xi), yf = sm(y - yi);
+      const a = at(xi, yi), b = at(xi + 1, yi), c = at(xi, yi + 1), d = at(xi + 1, yi + 1);
+      return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
+    };
+  }
+  function fbm(n, x, y, oct) {
+    let v = 0, amp = 0.5, f = 1;
+    for (let i = 0; i < oct; i++) { v += amp * n(x * f, y * f); amp *= 0.5; f *= 2; }
+    return v;
+  }
+
+  // a cloudy mountain range in low-res RGB, used until a wallpaper is set
+  function ditherFallback(cols, rows) {
+    const n = vnoise(1337);
+    const out = new Uint8ClampedArray(cols * rows * 4);
+    const sx = 6 / cols;
+    for (let y = 0; y < rows; y++) {
+      const fy = y / rows;
+      for (let x = 0; x < cols; x++) {
+        const fx = x / cols;
+        // sky: cloud banks, brighter up top
+        const cloud = Math.max(0, fbm(n, x * sx, y * sx * 1.6, 5) - 0.38) * 2.2;
+        let r = 70 + 90 * cloud, g = 84 + 96 * cloud, b = 100 + 104 * cloud;
+        let lum = (0.35 + 0.65 * cloud) * (1 - fy * 0.7);
+        // two ridges: far blue-grey, near dark with a warm glint on the right
+        const far = 0.26 + 0.22 * fbm(n, fx * 4 + 10, 3, 4) - 0.08 * Math.sin(fx * 3.1);
+        const near = 0.48 + 0.18 * fbm(n, fx * 3 + 40, 7, 5) + 0.05 * Math.cos(fx * 5);
+        if (fy > far) {
+          // snowy far range: bright crests streaked by rock
+          const rock = fbm(n, x * sx * 3, y * sx * 2 + 20, 5);
+          const crest = Math.max(0, 1 - (fy - far) * 5);
+          lum = 0.2 + 0.55 * crest * rock + 0.6 * Math.max(0, rock - 0.5);
+          r = 150; g = 166; b = 186;
+        }
+        if (fy > near) {
+          const rock = fbm(n, x * sx * 4 + 5, y * sx * 3, 5);
+          lum = 0.06 + 0.8 * Math.max(0, rock - 0.45) * (0.5 + fx * 0.8);
+          r = 170 + 40 * fx; g = 160 + 20 * fx; b = 100;
+        }
+        lum = Math.max(0, Math.min(1, lum));
+        const i = (y * cols + x) * 4;
+        out[i] = r * lum; out[i + 1] = g * lum; out[i + 2] = b * lum; out[i + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  function buildDither() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const cols = Math.ceil(W / DITHER_CELL), rows = Math.ceil(H / DITHER_CELL);
+    // a hidden/unlaid-out window reports 0×0; the next resize rebuilds
+    if (!cols || !rows) { modeState.dither = null; return; }
+    // sample the source at one texel per dither pixel
+    let d = null;
+    const src = wallpaperImg;
+    if (src && src.width) {
+      const off = document.createElement('canvas');
+      off.width = cols; off.height = rows;
+      const oc = off.getContext('2d');
+      oc.imageSmoothingQuality = 'high';
+      const scale = Math.max(cols / src.width, rows / src.height);
+      const dw = src.width * scale, dh = src.height * scale;
+      oc.drawImage(src, (cols - dw) / 2, (rows - dh) / 2, dw, dh);
+      // a cross-origin wallpaper without CORS taints the canvas
+      try { d = oc.getImageData(0, 0, cols, rows).data; } catch (err) { d = null; }
+    }
+    if (!d) d = ditherFallback(cols, rows);
+
+    // masks: opaque top third fading out by ~94% of the height, and a calm
+    // ellipse behind the centre column (26% strength inside, full outside)
+    const ecx = W / 2, ecy = H * 0.42;
+    const erx = Math.min(580, W * 0.42), ery = Math.min(300, H * 0.3);
+    const out = new ImageData(cols, rows);
+    const o = out.data;
+    for (let y = 0; y < rows; y++) {
+      const py = (y + 0.5) * DITHER_CELL;
+      const fy = py / H;
+      const fade = fy <= 0.3 ? 1 : Math.max(0, 1 - (fy - 0.3) / 0.64);
+      if (fade <= 0) continue;
+      const brow = BAYER8[y & 7];
+      for (let x = 0; x < cols; x++) {
+        const i = (y * cols + x) * 4;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+        // gentle contrast lift so mid-tones split into readable patterns
+        const v = Math.min(1, Math.max(0, (lum - 0.04) * 1.25));
+        if (v <= brow[x & 7]) continue;
+        const px = (x + 0.5) * DITHER_CELL;
+        const dx = (px - ecx) / erx, dy = (py - ecy) / ery;
+        const e = Math.sqrt(dx * dx + dy * dy);
+        const calm = e <= 0.4 ? 0.26 : e >= 1 ? 1 : 0.26 + 0.74 * ((e - 0.4) / 0.6);
+        // lift each pixel to a bright version of its source hue, so dark
+        // photo areas still read as coloured dots rather than mud
+        const k = (150 + 105 * v) / Math.max(r, g, b, 1);
+        o[i] = Math.min(255, r * k * 0.85 + 38);
+        o[i + 1] = Math.min(255, g * k * 0.85 + 38);
+        o[i + 2] = Math.min(255, b * k * 0.85 + 38);
+        o[i + 3] = Math.round(255 * fade * calm);
+      }
+    }
+    // blow the low-res buffer up to device pixels with hard edges
+    const small = document.createElement('canvas');
+    small.width = cols; small.height = rows;
+    small.getContext('2d').putImageData(out, 0, 0);
+    const big = document.createElement('canvas');
+    big.width = Math.round(cols * DITHER_CELL * dpr);
+    big.height = Math.round(rows * DITHER_CELL * dpr);
+    const bc = big.getContext('2d');
+    bc.imageSmoothingEnabled = false;
+    bc.drawImage(small, 0, 0, big.width, big.height);
+    const R = POINTER_R * 1.3;
+    const lamp = document.createElement('canvas'); // scratch for the cursor glow
+    lamp.width = lamp.height = Math.ceil(R * 2 * dpr);
+    modeState.dither = { img: big, w: cols * DITHER_CELL, h: rows * DITHER_CELL, lamp, R, dpr };
+  }
+
+  function drawDither() {
+    const s = modeState.dither;
+    if (!s) return;
+    // near-black base (keeps a hint of the phase sky) so the pixels pop
+    ctx.fillStyle = 'rgba(12,12,14,0.82)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = DITHER_OPACITY;
+    ctx.drawImage(s.img, 0, 0, s.w, s.h);
+    ctx.globalAlpha = 1;
+    // cursor: the same pixels again, added on top inside a soft circle
+    if (pointer.k > 0.01) {
+      const { lamp, R, dpr } = s;
+      const lc = lamp.getContext('2d');
+      const x0 = pointer.x - R, y0 = pointer.y - R;
+      lc.globalCompositeOperation = 'source-over';
+      lc.clearRect(0, 0, lamp.width, lamp.height);
+      lc.imageSmoothingEnabled = false;
+      lc.drawImage(s.img, Math.round(-x0 * dpr), Math.round(-y0 * dpr));
+      lc.globalCompositeOperation = 'destination-in';
+      const c = R * dpr;
+      const g = lc.createRadialGradient(c, c, 0, c, c, c);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      lc.fillStyle = g;
+      lc.fillRect(0, 0, lamp.width, lamp.height);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.6 * pointer.k;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(lamp, x0, y0, R * 2, R * 2);
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+
   function buildHalftoneSample() {
     const src = wallpaperImg;
     const cols = Math.ceil(W / dotSize) + 1;
@@ -1024,6 +1206,7 @@ const bgApi = (function background() {
   function buildModeExtras() {
     modeState = { meteor: null };
     if (bgMode === 'halftone') buildHalftoneSample();
+    if (bgMode === 'dither') buildDither();
     if (bgMode === 'photo') buildPhoto();
     if (bgMode === 'lamp') {
       buildLamp();
@@ -1280,6 +1463,7 @@ const bgApi = (function background() {
     setWallpaper(img) {
       wallpaperImg = img;
       if (bgMode === 'halftone') buildHalftoneSample();
+      if (bgMode === 'dither') buildDither();
       if (bgMode === 'photo') buildPhoto();
       if (reduced) draw(0);
     },
@@ -1471,8 +1655,8 @@ const bgApi = (function background() {
 
   // background style
   const bgOpts = document.getElementById('bg-opts');
-  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone', 'photo'];
-  const WALL_BGS = ['halftone', 'photo']; // modes that draw the wallpaper
+  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone', 'dither', 'photo'];
+  const WALL_BGS = ['halftone', 'dither', 'photo']; // modes that draw the wallpaper
   function currentBg() {
     const b = loadStored('home:bg');
     return VALID_BGS.includes(b) ? b : 'scene';
