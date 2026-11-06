@@ -279,6 +279,24 @@ body[data-theme="teal"] {
   --submit-fg: #d4fffa;
 }
 
+/* image: the accent pair is sampled from the wallpaper at runtime
+   (--img-accent / --img-accent-2 set on body by setImageTheme); every other
+   accent token derives from them, so any picture yields a full theme */
+body[data-theme="image"] {
+  --accent: var(--img-accent, #6c8cff);
+  --border: rgb(from var(--accent) r g b / 0.32);
+  --pill-border: rgb(from var(--accent) r g b / 0.28);
+  --border-strong: rgb(from var(--img-accent-2, var(--accent)) r g b / 0.52);
+  --glow: rgb(from var(--accent) r g b / 0.16);
+  --glow-strong: rgb(from var(--img-accent-2, var(--accent)) r g b / 0.30);
+  --sel: rgb(from var(--accent) r g b / 0.35);
+  --chip-fg: color-mix(in srgb, var(--accent) 80%, #fff);
+  --key-fg: color-mix(in srgb, var(--accent) 88%, #fff);
+  --submit-bg: color-mix(in srgb, var(--accent) 45%, #000);
+  --submit-bg-hover: color-mix(in srgb, var(--accent) 55%, #000);
+  --submit-fg: color-mix(in srgb, var(--img-accent-2, var(--accent)) 25%, #fff);
+}
+
 /* light phases: the bright accent chips/keys above are tuned for dark glass;
    on white glass they need a deeper shade of the same hue to stay legible */
 body[data-phase="morning"]:not([data-theme="classic"]),
@@ -307,7 +325,8 @@ body[data-theme]:not([data-theme="classic"]) {
    (navy at night, maroon at evening) must drain toward neutral. Relative-color
    syntax zeroes each surface's saturation while keeping its own lightness and
    alpha — dark glass stays dark, white glass stays white. */
-body[data-theme="dark"], body[data-theme="bright"] {
+body[data-theme="dark"], body[data-theme="bright"],
+body[data-theme="image"][data-img-mono] {
   --panel: hsl(from var(--panel-base) h 0% l / alpha);
   --suggest-bg: hsl(from var(--suggest-bg-base) h 0% l / alpha);
   --pill-bg: hsl(from var(--pill-bg-base) h 0% l / alpha);
@@ -1068,6 +1087,10 @@ body.no-tabs .tab-strip { display: none; }
   border-radius: 3px;
   background: var(--sw);
   box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.45);
+}
+/* before a wallpaper is sampled the Image swatch is a tiny landscape */
+.theme-opts .sw-img {
+  background: var(--sw, linear-gradient(180deg, #7ab8ff 0 45%, #f0a830 45% 60%, #2e8b57 60%));
 }
 
 /* a one-shot action living inside an option row (e.g. Clear history) */

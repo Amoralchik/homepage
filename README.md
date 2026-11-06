@@ -102,7 +102,10 @@ colours (a misty mountain range is drawn until you pick one). Setting a wallpape
 Bright, **Cyberpunk**, Violet, Red (Mars), **Amber**, Green, **Teal**, Blue or Rose (each
 button shows a color swatch). The theme recolors the
 pixel planet/sun, its glow, **the whole sky, grid and stars**, and the UI accents; the
-day/night cycle keeps running on top.
+day/night cycle keeps running on top. **Image** builds a theme from your wallpaper: it
+samples the picture's dominant color (accent, planet) and a second distinct hue (sun,
+strong borders); mostly-gray pictures give a neutral monochrome theme. Picking Image
+with no wallpaper set opens the wallpaper picker.
 
 **Show/hide:** the **Show** row toggles individual elements — the planet, the stars,
 the search input, the time pill, the help dock, and the **pulsing border** on the
