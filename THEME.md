@@ -230,3 +230,33 @@ eased via `pointer.k` and skipped under reduced motion; the deferred §1 lamp
 wallpaper pre-rendered once at 1.06× for a Ken Burns drift, under a phase-keyed veil
 (`PHOTO_VEIL`) tinted with the sky colors plus a vignette for UI legibility. Retro gets
 a striped synthwave sun from the theme's `sunRamp` (`moonRamp` at night).
+
+---
+
+# 7. Image Theme — colors from the wallpaper (2026-11-06)
+
+**Feature:** an **Image** theme button whose palette is sampled from the
+wallpaper (the same image Photo/Halftone/Dither use).
+
+**Extraction** (`extractImagePalette` in `app.js`): the image is drawn at ~64px,
+chromatic pixels (s ≥ 15, 10 < l < 92) are binned by hue into 24 × 15° bins,
+weighted by saturation × closeness to mid-lightness, and smoothed with their
+neighbours. The top bin is the **primary**; the strongest bin ≥ 60° away with
+≥ 6% of its score is the **secondary** (low enough that a small vivid sun in a
+landscape counts). Under 8% chromatic pixels or avg saturation < 10 → `mono`.
+
+**Mapping** (`buildImageTheme`): `hue` anchors the canvas on the primary
+(`primary − HUE_REF`, never 0 since 0 means pass-through), `sat` follows the
+image's average saturation (0.6–1.25), `moonRamp` is built from the primary,
+`sunRamp` from the secondary. UI accents are normalised to s 40–85 / l 60–64
+so any picture yields legible chips. Mono images theme like Dark/Bright: sat
+0.12 and the `data-img-mono` attribute joins the glass-desaturation rule.
+
+**CSS:** `setImageTheme` only sets `--img-accent` / `--img-accent-2` on body;
+`body[data-theme="image"]` derives every accent token from them with
+relative-color/`color-mix`, and surface accord (§2) applies as for any theme.
+
+**Lifecycle:** re-extracted whenever a wallpaper loads (including on start);
+the last result is cached in `home:imgtheme` so the first frame is already
+themed. Clearing the wallpaper resets to classic-like defaults. Cross-origin
+images without CORS can't be sampled and keep the previous palette.

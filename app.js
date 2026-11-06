@@ -190,7 +190,126 @@ const THEMES = {
     sunRamp: ['#6b1a3a', '#d14a7e', '#ff8ab0', '#ffe4ee'],
     glow: [240, 111, 168],
   },
+  /* image: rebuilt from the wallpaper's own colors by setImageTheme(); these
+     classic-like values only show until a wallpaper has been sampled */
+  image: {
+    hue: 0, sat: 1, lum: 1,
+    moonRamp: ['#24348c', '#4160c8', '#7492f0', '#b3c6ff'],
+    sunRamp: ['#ff8f2e', '#ffb03a', '#ffd45e', '#fff2c8'],
+    glow: [99, 132, 255],
+  },
 };
+
+/* ---------- image theme: palette extraction ---------- */
+/* Samples the wallpaper at ~64px, bins chromatic pixels by hue (24 × 15°),
+   weighting vivid mid-tones most, and picks the strongest bin as the accent
+   plus a second bin ≥60° away as the secondary. Mostly-gray images come back
+   as `mono` and theme like Dark/Bright. Returns null for tainted canvases. */
+function extractImagePalette(img) {
+  const N = 64;
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  if (!w0 || !h0) return null;
+  const ar = w0 / h0;
+  const c = document.createElement('canvas');
+  c.width = ar >= 1 ? N : Math.max(8, Math.round(N * ar));
+  c.height = ar >= 1 ? Math.max(8, Math.round(N / ar)) : N;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, c.width, c.height);
+  let data;
+  try { data = x.getImageData(0, 0, c.width, c.height).data; } catch (e) { return null; }
+
+  const BINS = 24;
+  const bins = Array.from({ length: BINS }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+  let px = 0, lumSum = 0, satSum = 0, chroma = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 128) continue;
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const [h, s, l] = rgbToHsl(r, g, b);
+    px++; lumSum += l; satSum += s;
+    if (s < 15 || l < 10 || l > 92) continue;
+    chroma++;
+    const w = (s / 100) * (1 - Math.abs(l - 55) / 60);
+    const bin = bins[Math.floor(h / (360 / BINS)) % BINS];
+    bin.w += w; bin.r += r * w; bin.g += g * w; bin.b += b * w;
+  }
+  if (!px) return null;
+  const avgL = lumSum / px, avgS = satSum / px;
+
+  const mono = chroma / px < 0.08 || avgS < 10;
+  if (mono) return { mono: true, avgL, avgS };
+
+  // smooth across neighbours so a hue straddling two bins isn't split
+  const score = bins.map((_, i) =>
+    bins[i].w + 0.5 * (bins[(i + 1) % BINS].w + bins[(i + BINS - 1) % BINS].w));
+  const order = score.map((s, i) => i).sort((a, b) => score[b] - score[a]);
+  const colorOf = i => {
+    let w = 0, r = 0, g = 0, b = 0;
+    for (const j of [i - 1, i, i + 1]) {
+      const bn = bins[(j + BINS) % BINS];
+      w += bn.w; r += bn.r; g += bn.g; b += bn.b;
+    }
+    return [r / w, g / w, b / w];
+  };
+  const top = order[0];
+  const second = order.find(i => {
+    const d = Math.min(Math.abs(i - top), BINS - Math.abs(i - top));
+    return d >= 4 && score[i] >= score[top] * 0.06; // a small vivid sun still counts
+  });
+  return {
+    mono: false, avgL, avgS,
+    primary: colorOf(top),
+    secondary: second != null ? colorOf(second) : null,
+  };
+}
+
+// turns an extracted palette into the THEMES.image entry plus the UI accent
+// colors the CSS derives everything else from
+function buildImageTheme(p) {
+  const hex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  if (!p || p.mono) {
+    const l = p ? clamp(p.avgL, 20, 80) : 50;
+    const ramp = [l * 0.3, l * 0.55, l * 0.85, Math.min(100, l * 0.85 + 30)]
+      .map(v => hex(hslToRgb(0, 0, v)));
+    const g = Math.round(clamp(l * 2.55 + 60, 110, 230));
+    return {
+      theme: { hue: 0, sat: 0.12, lum: p && p.avgL > 60 ? 1.15 : 0.8, moonRamp: ramp, sunRamp: ramp, glow: [g, g, g] },
+      accent: hex([g, g, g]), accent2: hex([g, g, g]), mono: true,
+    };
+  }
+  const [h1, s1] = rgbToHsl(...p.primary);
+  const [h2, s2] = p.secondary ? rgbToHsl(...p.secondary) : [(h1 + 35) % 360, s1];
+  // accents are normalised into a legible band; the image's own saturation
+  // still decides how loud the world gets
+  const as1 = clamp(s1, 40, 85), as2 = clamp(s2, 40, 85);
+  const accent = hslToRgb(h1, as1, 60);
+  const accent2 = hslToRgb(h2, as2, 64);
+  const ramp = (h, s, lift) => [14, 32, 54, 84].map((l, i) =>
+    hex(hslToRgb(h, clamp(s - i * 6, 25, 90), Math.min(96, l + lift))));
+  return {
+    theme: {
+      hue: ((h1 - HUE_REF) % 360 + 360) % 360 || 360, // 0 would mean pass-through
+      sat: clamp(0.55 + p.avgS / 80, 0.6, 1.25),
+      lum: 1,
+      moonRamp: ramp(h1, as1, 0),
+      sunRamp: ramp(h2, as2, 6),
+      glow: accent,
+    },
+    accent: hex(accent), accent2: hex(accent2), mono: false,
+  };
+}
+
+// installs a built image theme: THEMES.image for the canvas, CSS variables
+// and the settings swatch for the chrome
+function setImageTheme(built) {
+  THEMES.image = built.theme;
+  const s = document.body.style;
+  s.setProperty('--img-accent', built.accent);
+  s.setProperty('--img-accent-2', built.accent2);
+  document.body.toggleAttribute('data-img-mono', !!built.mono);
+  const sw = document.getElementById('img-sw');
+  if (sw) sw.style.setProperty('--sw', `linear-gradient(135deg, ${built.accent} 50%, ${built.accent2} 50%)`);
+}
 
 function rgbToHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
@@ -1526,6 +1645,15 @@ const bgApi = (function background() {
     return null;
   }
 
+  // the Image theme's last extraction is cached so it paints on the first
+  // frame instead of waiting for IndexedDB to hand the wallpaper back
+  const IMAGE_THEME_DEFAULT = THEMES.image;
+  let hasWallpaper = false;
+  try {
+    const cached = JSON.parse(localStorage.getItem('home:imgtheme'));
+    if (cached && cached.theme && cached.accent) setImageTheme(cached);
+  } catch (e) { }
+
   function activeTheme() {
     const t = loadStored('home:theme');
     return THEMES[t] ? t : 'classic';
@@ -1613,6 +1741,8 @@ const bgApi = (function background() {
     store('home:theme', b.dataset.theme);
     renderThemeOpts();
     applyDayCycle();
+    // the Image theme has nothing to read yet: ask for a picture
+    if (b.dataset.theme === 'image' && !hasWallpaper) setWallModal(true);
   });
   renderThemeOpts();
 
@@ -1747,7 +1877,12 @@ const bgApi = (function background() {
     return new Promise(resolve => {
       const img = new Image();
       if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
-      img.onload = () => { bgApi.setWallpaper(img); resolve(true); };
+      img.onload = () => {
+        bgApi.setWallpaper(img);
+        hasWallpaper = true;
+        refreshImageTheme(img);
+        resolve(true);
+      };
       img.onerror = () => resolve(false);
       img.src = src;
     });
@@ -1775,6 +1910,30 @@ const bgApi = (function background() {
   async function clearWallpaper() {
     try { await idbSet('wallpaper', null); } catch (e) { }
     bgApi.setWallpaper(null);
+    hasWallpaper = false;
+    resetImageTheme();
+  }
+
+  // re-sample the wallpaper's colors into the Image theme; a tainted
+  // (cross-origin, no CORS) image keeps whatever was there before
+  function refreshImageTheme(img) {
+    const p = extractImagePalette(img);
+    if (!p) return;
+    const built = buildImageTheme(p);
+    setImageTheme(built);
+    store('home:imgtheme', JSON.stringify(built));
+    if (activeTheme() === 'image') { bgApi.setTheme('image'); applyDayCycle(); }
+  }
+
+  function resetImageTheme() {
+    THEMES.image = IMAGE_THEME_DEFAULT;
+    try { localStorage.removeItem('home:imgtheme'); } catch (e) { }
+    document.body.style.removeProperty('--img-accent');
+    document.body.style.removeProperty('--img-accent-2');
+    document.body.removeAttribute('data-img-mono');
+    const sw = document.getElementById('img-sw');
+    if (sw) sw.style.removeProperty('--sw');
+    if (activeTheme() === 'image') { bgApi.setTheme('image'); applyDayCycle(); }
   }
 
   function setWallModal(open) {
