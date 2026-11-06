@@ -79,14 +79,15 @@ afterglow in the morning, full amber at night, dust motes in the beam), **Noise*
 (film grain over a slowly breathing light), **Particles** (floating dust that links into
 faint constellations), **Retro** (synthwave floor with a striped sun sinking into the
 horizon — the moon at night), **Shooting** (dense starfield with occasional meteors),
-**Grain** (vivid gradient with film grain), **Halftone** (dot-matrix rendering) and
+**Grain** (vivid gradient with film grain), **Halftone** (dot-matrix rendering),
+**Dither** (Bayer-dithered pixel art of your wallpaper, fading out behind the search) and
 **Photo** (your wallpaper itself, with a slow drift and a phase-tinted veil so it still
 dims at night). The **Grid** drifts slowly with glowing intersections.
 Every background is theme- and phase-aware,
 so Cyberpunk-Retro or Rose-Aurora look exactly like you'd hope — the Lamp is
 phase-aware only: its warm light ignores the theme picker, like a real lamp would.
 
-**Pointer effects:** the grid, the halftone dots and the particles light up softly
+**Pointer effects:** the grid, the halftone dots, the dither pixels and the particles light up softly
 around your cursor, and clicking empty background sends a ripple through the scene. The
 Lamp warms up a little while you type. Turn it off under Look → **Motion**; it's off
 automatically with `prefers-reduced-motion`.
@@ -94,7 +95,8 @@ automatically with `prefers-reduced-motion`.
 **Wallpaper:** pick an image under **Wallpaper…** (file, drag & drop or URL — all stored
 locally in IndexedDB, never synced anywhere). **Photo** shows it as-is and **Halftone**
 renders it as glowing dot-matrix art — bright areas become big glowing dots, dark areas
-fall silent. Setting a wallpaper while another background is active switches to Photo.
+fall silent. **Dither** turns it into fine ordered-dither pixels in the photo's own
+colours (a misty mountain range is drawn until you pick one). Setting a wallpaper while another background is active switches to Photo.
 
 **Celestial themes:** in the same panel, pick a planet personality — Classic, Dark,
 Bright, **Cyberpunk**, Violet, Red (Mars), **Amber**, Green, **Teal**, Blue or Rose (each
