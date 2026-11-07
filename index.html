@@ -137,7 +137,7 @@
         <span class="set-name">Wall</span>
         <div class="wall-actions">
           <button type="button" class="wall-btn" id="wall-open">Wallpaper…</button>
-          <button type="button" class="wall-btn" id="wall-clear">Clear</button>
+          <button type="button" class="wall-btn" id="wall-clear">Clear all</button>
         </div>
       </div>
       <div class="set-row" id="dots-row">
@@ -273,14 +273,36 @@
   </div>
 
   <div class="wall-modal" id="wall-modal" aria-hidden="true">
-    <div class="wall-box" role="dialog" aria-label="Set wallpaper">
+    <div class="wall-box" role="dialog" aria-label="Wallpapers">
       <header class="wall-head">
-        <span class="wall-title">WALLPAPER</span>
+        <span class="wall-title">WALLPAPERS</span>
         <button type="button" class="mod-icon-btn" id="wall-close" aria-label="Close">×</button>
       </header>
       <div class="wall-drop" id="wall-drop">
-        <strong>Drop an image here</strong>
-        <span>or pick one below · saved locally, never uploaded</span>
+        <strong>Drop images here</strong>
+        <span>or pick below · saved locally, never uploaded</span>
+      </div>
+      <div class="wall-strip" id="wall-strip" hidden></div>
+      <div class="wall-count" id="wall-count"></div>
+      <div class="wall-sched" id="wall-sched" hidden>
+        <div class="wall-sched-row">
+          <span class="wall-sched-name">Change</span>
+          <div class="phase-opts" id="wall-rotate" role="group" aria-label="Change wallpaper">
+            <button type="button" data-min="0">New tab</button>
+            <button type="button" data-min="1">1 min</button>
+            <button type="button" data-min="5">5 min</button>
+            <button type="button" data-min="15">15 min</button>
+            <button type="button" data-min="60">1 hour</button>
+          </div>
+        </div>
+        <div class="wall-sched-row top">
+          <span class="wall-sched-name">Schedule</span>
+          <div class="wall-rules">
+            <div id="wall-rule-list"></div>
+            <button type="button" class="wall-btn" id="wall-rule-add">+ Add time rule</button>
+            <p class="wall-hint" id="wall-sched-hint"></p>
+          </div>
+        </div>
       </div>
       <div class="wall-url-row">
         <input type="text" id="wall-url" placeholder="paste image URL…" spellcheck="false" autocomplete="off" />
@@ -288,8 +310,8 @@
       </div>
       <div class="wall-actions-row">
         <button type="button" class="wall-btn" id="wall-browse">Browse files…</button>
-        <button type="button" class="wall-btn" id="wall-clear-modal">Clear wallpaper</button>
-        <input type="file" id="wall-input" accept="image/*" hidden />
+        <button type="button" class="wall-btn" id="wall-clear-modal">Clear all</button>
+        <input type="file" id="wall-input" accept="image/*" multiple hidden />
       </div>
     </div>
   </div>

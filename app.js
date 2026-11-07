@@ -1888,30 +1888,391 @@ const bgApi = (function background() {
     });
   }
 
+  // up to WALL_MAX wallpapers live in IndexedDB as a list of image sources;
+  // every page load shows one of them at random (never the same one twice in
+  // a row when there's a choice), so a new tab feels a little different
+  const WALL_MAX = 5;
+  const wallStrip = document.getElementById('wall-strip');
+  const wallCount = document.getElementById('wall-count');
+  let walls = [];      // image sources (data: URLs or http(s) URLs)
+  let wallShown = -1;  // index of the one on screen
+  let wallChangedAt = Date.now(); // when the shown one last changed (for the timer)
+
+  /* crossfade: freeze the current frame in an overlay canvas, swap the
+     wallpaper underneath, then fade the frozen frame out */
+  const bgCanvas = document.getElementById('bg');
+  function snapshotBg() {
+    if (!bgCanvas.width || matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+    document.querySelectorAll('.bg-fade').forEach(el => el.remove());
+    const c = document.createElement('canvas');
+    c.className = 'bg-fade';
+    c.setAttribute('aria-hidden', 'true');
+    c.width = bgCanvas.width;
+    c.height = bgCanvas.height;
+    try { c.getContext('2d').drawImage(bgCanvas, 0, 0); } catch (e) { return null; }
+    bgCanvas.after(c);
+    return c;
+  }
+  function releaseFade(c) {
+    c.getBoundingClientRect(); // flush layout so the opacity change transitions
+    c.classList.add('out');
+    c.addEventListener('transitionend', () => c.remove(), { once: true });
+    setTimeout(() => c.remove(), 3000); // in case transitionend never fires
+  }
+
+  /* timed rotation: 0 = only a new tab picks a new one */
+  const ROTATE_OPTS = [0, 1, 5, 15, 60]; // minutes
+  function rotateMins() {
+    const m = parseInt(loadStored('home:wallRotate'), 10);
+    return ROTATE_OPTS.includes(m) ? m : 0;
+  }
+
+  /* schedule rules: "from HH:MM show image #n", repeating daily. The rule in
+     force is the latest one at or before now (before the first rule of the
+     day, last night's final rule still holds). Rules beat the random pick
+     and the timer; a manual pick sticks until the next rule kicks in. */
+  function loadRules() {
+    try {
+      const r = JSON.parse(loadStored('home:wallRules'));
+      return Array.isArray(r) ? r.filter(x => x && /^\d\d:\d\d$/.test(x.t) && Number.isInteger(x.i) && x.i >= 0) : [];
+    } catch (e) { return []; }
+  }
+  let rules = loadRules();
+  function saveRules() { store('home:wallRules', JSON.stringify(rules)); }
+  const toMin = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+  function activeRule(now = new Date()) {
+    const valid = rules.filter(r => r.i < walls.length).sort((a, b) => toMin(a.t) - toMin(b.t));
+    if (!valid.length) return null;
+    const m = now.getHours() * 60 + now.getMinutes();
+    let cur = valid[valid.length - 1];
+    for (const r of valid) if (toMin(r.t) <= m) cur = r;
+    return cur;
+  }
+  const ruleKey = r => (r ? `${r.t}>${r.i}` : null);
+  let ruleApplied = null;
+
+  function wallTick() {
+    if (!walls.length || document.hidden) return;
+    const r = activeRule();
+    if (r) {
+      const k = ruleKey(r);
+      if (k !== ruleApplied) {
+        ruleApplied = k;
+        if (r.i !== wallShown) showWall(r.i, true);
+      }
+      return;
+    }
+    ruleApplied = null;
+    const mins = rotateMins();
+    if (mins && walls.length > 1 && Date.now() - wallChangedAt >= mins * 60000) showWall(pickRandomWall(), true);
+  }
+  setInterval(wallTick, 15000);
+  document.addEventListener('visibilitychange', wallTick);
+
+  function persistWalls() {
+    return idbSet('wallpapers', walls.length ? walls.slice() : null).catch(() => { });
+  }
+
+  function pickRandomWall() {
+    if (!walls.length) return -1;
+    if (walls.length === 1) return 0;
+    const last = parseInt(loadStored('home:wallLast'), 10);
+    let i;
+    do { i = Math.floor(Math.random() * walls.length); } while (i === last);
+    return i;
+  }
+
+  // fade only when the change would be visible (a wallpaper mode, one already up)
+  async function showWall(i, fade) {
+    wallShown = i;
+    wallChangedAt = Date.now();
+    store('home:wallLast', String(i));
+    renderWallStrip();
+    const shot = fade && hasWallpaper && WALL_BGS.includes(currentBg()) ? snapshotBg() : null;
+    const ok = await applyWallpaper(walls[i]);
+    if (shot) releaseFade(shot);
+    return ok;
+  }
+
+  function renderWallStrip() {
+    wallStrip.textContent = '';
+    walls.forEach((src, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'wall-thumb' + (i === wallShown ? ' active' : '');
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'wall-thumb-pick';
+      pick.title = 'Show this one now';
+      pick.setAttribute('aria-label', `Show wallpaper ${i + 1}`);
+      pick.style.backgroundImage = `url("${src.replace(/"/g, '%22')}")`;
+      pick.addEventListener('click', () => showWall(i, true));
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'wall-thumb-del';
+      del.textContent = '×';
+      del.title = 'Remove';
+      del.setAttribute('aria-label', `Remove wallpaper ${i + 1}`);
+      del.addEventListener('click', () => removeWall(i));
+      const num = document.createElement('span');
+      num.className = 'wall-thumb-num';
+      num.textContent = i + 1;
+      cell.append(pick, num, del);
+      wallStrip.appendChild(cell);
+    });
+    wallStrip.hidden = !walls.length;
+    wallCount.textContent = walls.length
+      ? `${walls.length} / ${WALL_MAX} · a random one shows on each new tab`
+      : `add up to ${WALL_MAX} — a random one shows on each new tab`;
+    const full = walls.length >= WALL_MAX;
+    wallDrop.classList.toggle('full', full);
+    wallBrowse.disabled = full;
+    document.getElementById('wall-url-load').disabled = full;
+    renderWallSched();
+  }
+
+  // ---- "Change" timer + schedule rules UI ----
+  const wallSched = document.getElementById('wall-sched');
+  const wallRotate = document.getElementById('wall-rotate');
+  const wallRuleList = document.getElementById('wall-rule-list');
+  const wallSchedHint = document.getElementById('wall-sched-hint');
+
+  function renderWallSched() {
+    wallSched.hidden = walls.length < 2;
+    const mins = rotateMins();
+    for (const b of wallRotate.children) b.classList.toggle('active', +b.dataset.min === mins);
+    const live = activeRule();
+    wallRuleList.textContent = '';
+    rules.forEach((r, k) => {
+      const row = document.createElement('div');
+      row.className = 'wall-rule' + (live === r ? ' live' : '') + (r.i >= walls.length ? ' broken' : '');
+      const from = document.createElement('span');
+      from.textContent = 'from';
+      const time = timePicker(r.t, v => { r.t = v; rulesChanged(); });
+      time.dataset.focus = `t${k}`;
+      const show = document.createElement('span');
+      show.textContent = 'show';
+      const sel = wallPicker(r.i, v => { r.i = v; rulesChanged(); });
+      sel.dataset.focus = `i${k}`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'mod-icon-btn';
+      del.textContent = '×';
+      del.setAttribute('aria-label', 'Remove rule');
+      del.addEventListener('click', () => { rules.splice(k, 1); rulesChanged(); });
+      row.append(from, time, show, sel, del);
+      wallRuleList.appendChild(row);
+    });
+    wallSchedHint.textContent = rules.length
+      ? 'Repeats daily. Rules win over the random pick and the timer.'
+      : 'e.g. from 18:00 show #3 — repeats every day.';
+    wallRotate.classList.toggle('muted', rules.length > 0);
+  }
+
+  /* ---- custom pickers: a chip that opens a small popover inside the
+     dialog, instead of the browser's native time/select controls ---- */
+  const wallBox = wallModal.querySelector('.wall-box');
+  let pop = null;
+  let popAnchor = null;
+  let popOnClose = null;
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    if (tag === 'button') n.type = 'button';
+    return n;
+  }
+  // closes the open popover; refocus puts focus back on its chip (found again
+  // by data-focus, since committing a change re-renders the rule rows)
+  function closePop(refocus = true) {
+    if (!pop) return false;
+    const anchor = popAnchor, done = popOnClose;
+    pop.remove();
+    pop = popAnchor = popOnClose = null;
+    anchor.setAttribute('aria-expanded', 'false');
+    const key = anchor.dataset.focus;
+    if (done) done();
+    if (refocus) {
+      const again = key && wallBox.querySelector(`[data-focus="${key}"]`);
+      (again || anchor).focus();
+    }
+    return true;
+  }
+  function openPop(anchor, label, fill) {
+    const same = popAnchor === anchor;
+    closePop(false);
+    if (same) return;
+    pop = el('div', 'wall-pop');
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', label);
+    popOnClose = fill(pop) || null;
+    wallBox.appendChild(pop);
+    const b = wallBox.getBoundingClientRect(), a = anchor.getBoundingClientRect();
+    let top = a.bottom - b.top + 6;
+    if (a.bottom + pop.offsetHeight + 12 > innerHeight) top = a.top - b.top - pop.offsetHeight - 6;
+    pop.style.top = `${Math.max(8, top)}px`;
+    pop.style.left = `${Math.max(8, Math.min(a.left - b.left, b.width - pop.offsetWidth - 8))}px`;
+    popAnchor = anchor;
+    anchor.setAttribute('aria-expanded', 'true');
+    (pop.querySelector('.sel') || pop.querySelector('button')).focus();
+  }
+  document.addEventListener('pointerdown', e => {
+    if (pop && !pop.contains(e.target) && !popAnchor.contains(e.target)) closePop(false);
+  });
+  // arrow keys move between the cells of a popover grid
+  function gridKeys(grid, cols) {
+    grid.addEventListener('keydown', e => {
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key];
+      if (!step) return;
+      const cells = [...grid.children];
+      const i = cells.indexOf(document.activeElement);
+      if (i < 0) return;
+      e.preventDefault();
+      const next = cells[Math.max(0, Math.min(cells.length - 1, i + step))];
+      next.focus();
+    });
+  }
+
+  const pad2 = n => String(n).padStart(2, '0');
+  // hour grid (00–23) + minute grid (5-minute steps); picking a minute
+  // commits and closes, picking only an hour commits when the popover closes
+  function timePicker(value, onChange) {
+    const btn = el('button', 'wall-pick wall-time', value);
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', `Start time ${value}`);
+    btn.addEventListener('click', () => openPop(btn, 'Pick a time', p => {
+      let h = +value.slice(0, 2), m = +value.slice(3, 5);
+      const hg = el('div', 'pop-grid hours'), mg = el('div', 'pop-grid mins');
+      const mark = () => {
+        [...hg.children].forEach(c => c.classList.toggle('sel', +c.dataset.v === h));
+        [...mg.children].forEach(c => c.classList.toggle('sel', +c.dataset.v === m));
+        btn.textContent = `${pad2(h)}:${pad2(m)}`;
+      };
+      for (let i = 0; i < 24; i++) {
+        const c = el('button', null, pad2(i));
+        c.dataset.v = i;
+        c.addEventListener('click', () => { h = i; mark(); mg.querySelector('.sel, button').focus(); });
+        hg.appendChild(c);
+      }
+      for (let i = 0; i < 60; i += 5) {
+        const c = el('button', null, `:${pad2(i)}`);
+        c.dataset.v = i;
+        c.addEventListener('click', () => { m = i; mark(); closePop(); });
+        mg.appendChild(c);
+      }
+      gridKeys(hg, 6);
+      gridKeys(mg, 6);
+      p.append(el('div', 'pop-label', 'Hour'), hg, el('div', 'pop-label', 'Minute'), mg);
+      mark();
+      return () => {
+        const v = `${pad2(h)}:${pad2(m)}`;
+        if (v !== value) onChange(v);
+      };
+    }));
+    return btn;
+  }
+
+  // a thumbnail chip that opens a grid of the saved wallpapers
+  function wallPicker(index, onChange) {
+    const btn = el('button', 'wall-pick wall-img');
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', `Wallpaper #${index + 1}`);
+    const sw = el('i', 'pick-sw');
+    if (walls[index]) sw.style.backgroundImage = `url("${walls[index].replace(/"/g, '%22')}")`;
+    btn.append(sw, el('span', null, `#${index + 1}`));
+    btn.addEventListener('click', () => openPop(btn, 'Pick a wallpaper', p => {
+      const g = el('div', 'pop-grid walls');
+      walls.forEach((src, i) => {
+        const c = el('button', i === index ? 'sel' : null);
+        c.setAttribute('aria-label', `Wallpaper #${i + 1}`);
+        c.style.backgroundImage = `url("${src.replace(/"/g, '%22')}")`;
+        c.appendChild(el('span', null, i + 1));
+        c.addEventListener('click', () => {
+          closePop();
+          if (i !== index) onChange(i);
+        });
+        g.appendChild(c);
+      });
+      gridKeys(g, 5);
+      p.appendChild(g);
+    }));
+    return btn;
+  }
+
+  function rulesChanged() {
+    saveRules();
+    ruleApplied = null; // re-evaluate right away
+    renderWallSched();
+    wallTick();
+  }
+
+  wallRotate.addEventListener('click', e => {
+    const b = e.target.closest('button[data-min]');
+    if (!b) return;
+    store('home:wallRotate', b.dataset.min);
+    wallChangedAt = Date.now();
+    renderWallSched();
+  });
+
+  document.getElementById('wall-rule-add').addEventListener('click', () => {
+    // default: the hour after the latest rule (or the next full hour)
+    const last = rules.length ? Math.max(...rules.map(r => toMin(r.t))) : new Date().getHours() * 60;
+    const h = Math.floor(last / 60 + 1) % 24;
+    rules.push({ t: `${String(h).padStart(2, '0')}:00`, i: Math.max(0, wallShown) });
+    rulesChanged();
+  });
+
   // a new wallpaper on a mode that ignores it would look like nothing
   // happened — hop to Photo so the pick is visible right away
   function showWallpaperMode() {
     if (!WALL_BGS.includes(currentBg())) setBg('photo');
   }
 
-  async function saveWallpaper(src) {
+  async function addWallpaper(src) {
+    if (walls.includes(src)) { await showWall(walls.indexOf(src)); return true; }
+    if (walls.length >= WALL_MAX) return false;
     const ok = await applyWallpaper(src);
     if (!ok) {
       wallUrl.value = '';
       wallUrl.placeholder = "couldn't load that image — try another";
-      return;
+      return false;
     }
-    try { await idbSet('wallpaper', src); } catch (e) { }
+    walls.push(src);
+    await persistWalls();
+    wallShown = walls.length - 1;
+    store('home:wallLast', String(wallShown));
     wallUrl.placeholder = 'paste image URL…';
+    renderWallStrip();
     showWallpaperMode();
-    setWallModal(false);
+    return true;
+  }
+
+  async function removeWall(i) {
+    walls.splice(i, 1);
+    rules = rules.filter(r => r.i !== i).map(r => (r.i > i ? { t: r.t, i: r.i - 1 } : r));
+    saveRules();
+    if (!walls.length) { clearWallpaper(); return; }
+    await persistWalls();
+    if (i === wallShown) await showWall(Math.min(i, walls.length - 1));
+    else {
+      if (i < wallShown) wallShown--;
+      store('home:wallLast', String(wallShown));
+      renderWallStrip();
+    }
   }
 
   async function clearWallpaper() {
+    walls = [];
+    wallShown = -1;
+    rules = [];
+    saveRules();
+    try { await idbSet('wallpapers', null); } catch (e) { }
     try { await idbSet('wallpaper', null); } catch (e) { }
     bgApi.setWallpaper(null);
     hasWallpaper = false;
     resetImageTheme();
+    renderWallStrip();
   }
 
   // re-sample the wallpaper's colors into the Image theme; a tainted
@@ -1937,6 +2298,7 @@ const bgApi = (function background() {
   }
 
   function setWallModal(open) {
+    if (!open) closePop(false);
     wallModal.classList.toggle('open', open);
     wallModal.setAttribute('aria-hidden', String(!open));
   }
@@ -1944,36 +2306,63 @@ const bgApi = (function background() {
   document.getElementById('wall-close').addEventListener('click', () => setWallModal(false));
   wallModal.addEventListener('click', e => { if (e.target === wallModal) setWallModal(false); });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && wallModal.classList.contains('open')) setWallModal(false);
+    if (e.key !== 'Escape' || !wallModal.classList.contains('open')) return;
+    if (closePop()) return; // Esc closes an open picker before the dialog
+    setWallModal(false);
   });
 
-  function loadWallFile(file) {
-    if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => saveWallpaper(reader.result);
-    reader.readAsDataURL(file);
+  function readAsDataURL(file) {
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result);
+      reader.onerror = () => rej(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+  // several files can be dropped or picked at once; extras past the cap are skipped
+  async function loadWallFiles(files) {
+    for (const file of Array.from(files || [])) {
+      if (walls.length >= WALL_MAX) break;
+      if (!file.type.startsWith('image/')) continue;
+      try { await addWallpaper(await readAsDataURL(file)); } catch (e) { }
+    }
   }
 
   ['dragenter', 'dragover'].forEach(ev =>
     wallDrop.addEventListener(ev, e => { e.preventDefault(); wallDrop.classList.add('drag'); }));
   ['dragleave', 'drop'].forEach(ev =>
     wallDrop.addEventListener(ev, e => { e.preventDefault(); wallDrop.classList.remove('drag'); }));
-  wallDrop.addEventListener('drop', e => loadWallFile(e.dataTransfer.files && e.dataTransfer.files[0]));
+  wallDrop.addEventListener('drop', e => loadWallFiles(e.dataTransfer.files));
   wallBrowse.addEventListener('click', () => wallInput.click());
-  wallInput.addEventListener('change', () => loadWallFile(wallInput.files && wallInput.files[0]));
+  wallInput.addEventListener('change', async () => { await loadWallFiles(wallInput.files); wallInput.value = ''; });
 
   function loadWallUrl() {
     const u = wallUrl.value.trim();
     if (!u || !/^(https?:|data:image\/)/i.test(u)) return;
     wallUrl.value = '';
-    saveWallpaper(u); // URLs persist too (previously lost on the next tab)
+    addWallpaper(u); // URLs persist too
   }
   document.getElementById('wall-url-load').addEventListener('click', loadWallUrl);
   wallUrl.addEventListener('keydown', e => { if (e.key === 'Enter') loadWallUrl(); });
 
   wallClearBtn.addEventListener('click', clearWallpaper);
   wallClearModalBtn.addEventListener('click', () => { clearWallpaper(); setWallModal(false); });
-  idbGet('wallpaper').then(applyWallpaper).catch(() => { });
+  // load the list (migrating the old single-wallpaper key) and show a random one
+  (async () => {
+    try {
+      let list = await idbGet('wallpapers');
+      if (!Array.isArray(list)) {
+        const legacy = await idbGet('wallpaper');
+        list = legacy ? [legacy] : [];
+        if (legacy) { await idbSet('wallpapers', list); await idbSet('wallpaper', null); }
+      }
+      walls = list.slice(0, WALL_MAX);
+    } catch (e) { walls = []; }
+    const r = activeRule();
+    ruleApplied = ruleKey(r);
+    const i = r ? r.i : pickRandomWall();
+    if (i >= 0) showWall(i); else renderWallStrip();
+  })();
 
   // halftone dot size slider
   const dotSlider = document.getElementById('dot-size');
@@ -2479,11 +2868,11 @@ const bgApi = (function background() {
 
   // wipe every home:* key (and the wallpaper) after a confirm, then reload
   document.getElementById('reset-all').addEventListener('click', async () => {
-    if (!confirm('Reset all Home settings, search history and the wallpaper?')) return;
+    if (!confirm('Reset all Home settings, search history and wallpapers?')) return;
     try {
       Object.keys(localStorage).filter(k => k.startsWith('home:')).forEach(k => localStorage.removeItem(k));
     } catch (e) { }
-    try { await idbSet('wallpaper', null); } catch (e) { }
+    try { await idbSet('wallpaper', null); await idbSet('wallpapers', null); } catch (e) { }
     location.reload();
   });
 
