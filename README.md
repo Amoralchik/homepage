@@ -209,7 +209,9 @@ Every background is theme- and phase-aware — except the Lamp, which ignores th
 
 - **Themes:** Classic, Dark, Bright, Cyberpunk, Violet, Red, Amber, Green, Teal, Blue, Rose — each recolours the planet, glow, sky, grid, stars and UI accents while the day cycle keeps running.
 - **Image theme:** samples your wallpaper's dominant colour (accent, planet) and a second distinct hue (sun, borders); mostly-gray pictures give a neutral monochrome theme.
-- **Wallpaper:** pick a file, drag & drop or paste a URL — stored locally in IndexedDB, never synced. Used by **Photo**, **Halftone** and **Dither**.
+- **Wallpapers:** save up to 5 — pick files, drag & drop or paste a URL — stored locally in IndexedDB, never synced. Used by **Photo**, **Halftone** and **Dither**.
+  - **Shuffle:** a random one shows on every new tab (never the same twice in a row), or set it to change every 1 / 5 / 15 / 60 minutes with a crossfade.
+  - **Schedule:** daily rules like *from 18:00 show #3*; rules take priority over shuffling, and clicking a thumbnail overrides them until the next rule starts.
 
 </details>
 
