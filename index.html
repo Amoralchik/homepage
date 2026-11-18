@@ -4,14 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Home</title>
-  <meta name="description" content="A tiny pixel world on your new tab: day/night cycle, 11 backgrounds, widgets and multi-provider search. Free and open source; everything stays on your machine." />
+  <meta name="description" content="A tiny pixel world on your new tab: day/night cycle, 13 backgrounds, greeting, quotes, notes, pomodoro, custom links and multi-provider search. Free and open source; everything stays on your machine." />
   <script>
     // The extension keeps its short tab title; the served demo (Pages, file://) gets the findable one.
     if (location.protocol !== 'chrome-extension:') {
       document.title = 'Home — pixel-art start page for Chrome';
     }
+    // remembered so the custom title feature can restore it
+    window.__origTitle = document.title;
   </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230a1428'/%3E%3Crect x='7' y='3' width='2' height='2' fill='%236c8cff'/%3E%3Crect x='5' y='5' width='6' height='2' fill='%236c8cff'/%3E%3Crect x='3' y='7' width='10' height='2' fill='%236c8cff'/%3E%3Crect x='5' y='9' width='2' height='4' fill='%236c8cff'/%3E%3Crect x='9' y='9' width='2' height='4' fill='%236c8cff'/%3E%3C/svg%3E" />
+  <script>
+    // the icon above, remembered so the emoji-favicon setting can restore it
+    window.__origFav = document.querySelector('link[rel="icon"]').href;
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
@@ -24,6 +30,13 @@
 
   <main class="page">
     <div class="center-wrap">
+      <div class="top-stack">
+        <div class="big-clock" id="big-clock" hidden>
+          <div class="big-digits" id="big-digits"></div>
+          <canvas id="analog-clock" class="analog-clock" width="132" height="132" hidden aria-label="Analog clock"></canvas>
+        </div>
+        <div class="greeting" id="greeting" hidden></div>
+      </div>
       <section class="search" id="search">
       <input
         id="query"
@@ -62,14 +75,13 @@
     </section>
 
     <div class="pill" id="pill">
-      <span class="pill-seg" id="pill-label">home</span>
-      <span class="pill-slash">/</span>
       <span class="pill-seg" id="clock">--:--</span>
-      <span class="pill-dot">·</span>
+      <span class="pill-dot" id="clock-dot">·</span>
       <span class="pill-seg" id="date">&nbsp;</span>
       <span class="pill-dot" id="wx-dot" hidden>·</span>
       <span class="pill-seg" id="wx" hidden></span>
     </div>
+    <div class="wx-pop" id="wx-pop" hidden></div>
     </div>
   </main>
 
@@ -84,11 +96,15 @@
     <div class="set-tabs" id="set-tabs" role="tablist" aria-label="Settings sections">
       <button type="button" role="tab" data-tab="look">Look</button>
       <button type="button" role="tab" data-tab="layout">Layout</button>
+      <button type="button" role="tab" data-tab="links">Links</button>
       <button type="button" role="tab" data-tab="search">Search</button>
-      <button type="button" role="tab" data-tab="weather">Weather</button>
+      <button type="button" role="tab" data-tab="widgets">Widgets</button>
+      <button type="button" role="tab" data-tab="more">More</button>
     </div>
 
+    <!-- ============ LOOK ============ -->
     <div class="set-pane" data-pane="look" role="tabpanel">
+      <div class="set-sec">Colors</div>
       <div class="set-row">
         <span class="set-name">Theme</span>
         <div class="phase-opts theme-opts" id="theme-opts" role="group" aria-label="Celestial theme">
@@ -116,34 +132,60 @@
           <button type="button" data-phase="night">Night</button>
         </div>
       </div>
-      <div class="set-row">
-        <span class="set-name">Bg</span>
-        <div class="phase-opts" id="bg-opts" role="group" aria-label="Background style">
-          <button type="button" data-bg="scene">Scene</button>
-          <button type="button" data-bg="aurora">Aurora</button>
-          <button type="button" data-bg="grid">Grid</button>
-          <button type="button" data-bg="lamp">Lamp</button>
-          <button type="button" data-bg="noise">Noise</button>
-          <button type="button" data-bg="particles">Particles</button>
-          <button type="button" data-bg="retro">Retro</button>
-          <button type="button" data-bg="shooting">Shooting</button>
-          <button type="button" data-bg="grain">Grain</button>
-          <button type="button" data-bg="halftone">Halftone</button>
-          <button type="button" data-bg="dither">Dither</button>
-          <button type="button" data-bg="photo">Photo</button>
+
+      <div class="set-sec">Background</div>
+      <label class="set-row">
+        <span class="set-name">Style</span>
+        <select class="set-input" id="bg-select" aria-label="Background style">
+          <optgroup label="Animated scenes">
+            <option value="scene">Scene — planet &amp; sky</option>
+            <option value="aurora">Aurora</option>
+            <option value="grid">Grid</option>
+            <option value="lamp">Lamp</option>
+            <option value="noise">Noise</option>
+            <option value="particles">Particles</option>
+            <option value="retro">Retro</option>
+            <option value="shooting">Shooting stars</option>
+            <option value="grain">Grain</option>
+            <option value="solid">Solid gradient</option>
+          </optgroup>
+          <optgroup label="From your wallpaper">
+            <option value="photo">Photo / video</option>
+            <option value="halftone">Halftone</option>
+            <option value="dither">Dither</option>
+          </optgroup>
+        </select>
+      </label>
+      <div class="set-sub" id="bg-sub">
+        <div class="set-row" id="wall-row">
+          <span class="set-name">Image</span>
+          <div class="wall-actions">
+            <button type="button" class="wall-btn" id="wall-open">Wallpapers…</button>
+            <button type="button" class="wall-btn" id="wall-clear">Clear all</button>
+          </div>
         </div>
-      </div>
-      <div class="set-row" id="wall-row">
-        <span class="set-name">Wall</span>
-        <div class="wall-actions">
-          <button type="button" class="wall-btn" id="wall-open">Wallpaper…</button>
-          <button type="button" class="wall-btn" id="wall-clear">Clear all</button>
+        <div class="set-row" id="dots-row">
+          <span class="set-name">Dots</span>
+          <input type="range" id="dot-size" class="dot-slider" min="8" max="26" step="2" value="14" aria-label="Halftone dot size" />
+          <span class="set-val" id="dot-size-val">14</span>
         </div>
-      </div>
-      <div class="set-row" id="dots-row">
-        <span class="set-name">Dots</span>
-        <input type="range" id="dot-size" class="dot-slider" min="8" max="26" step="2" value="14" aria-label="Halftone dot size" />
-        <span class="set-val" id="dot-size-val">14</span>
+        <div class="set-row" id="bg-blur-row" hidden>
+          <span class="set-name">Blur</span>
+          <input type="range" id="bg-blur" class="dot-slider" min="0" max="24" step="1" value="0" aria-label="Wallpaper blur" />
+          <span class="set-val" id="bg-blur-val">0</span>
+        </div>
+        <div class="set-row" id="bg-bright-row" hidden>
+          <span class="set-name">Light</span>
+          <input type="range" id="bg-bright" class="dot-slider" min="50" max="150" step="5" value="100" aria-label="Wallpaper brightness percent" />
+          <span class="set-val" id="bg-bright-val">100%</span>
+        </div>
+        <div class="set-row" id="solid-row" hidden>
+          <span class="set-name">Colors</span>
+          <div class="wall-actions">
+            <input type="color" id="solid-a" class="color-in" value="#101a3a" aria-label="Gradient start color" />
+            <input type="color" id="solid-b" class="color-in" value="#3a2a6a" aria-label="Gradient end color" />
+          </div>
+        </div>
       </div>
       <div class="set-row">
         <span class="set-name">Motion</span>
@@ -152,48 +194,109 @@
           <button type="button" data-motion="off">Off</button>
         </div>
       </div>
+
+      <div class="set-sec">Font</div>
+      <label class="set-row">
+        <span class="set-name">Font</span>
+        <select class="set-input" id="set-font" aria-label="Page font"></select>
+      </label>
+      <div class="set-row" id="font-custom-row" hidden>
+        <span class="set-name">Name</span>
+        <input class="set-input" id="set-font-custom" type="text" list="font-list" maxlength="60" spellcheck="false"
+               autocomplete="off" placeholder="any installed or Google font…" aria-label="Custom font family" />
+        <datalist id="font-list"></datalist>
+        <button type="button" class="wall-btn" id="font-local" hidden title="List the fonts installed on this computer">Installed…</button>
+      </div>
+      <div class="set-row">
+        <span class="set-name"></span>
+        <label class="set-check"><input type="checkbox" id="set-font-pixel" /> Keep the pixel font for small labels</label>
+      </div>
     </div>
 
+    <!-- ============ LAYOUT ============ -->
     <div class="set-pane" data-pane="layout" role="tabpanel" hidden>
+      <div class="set-sec">Clock</div>
+      <div class="set-row">
+        <span class="set-name">Size</span>
+        <div class="phase-opts" id="clock-size-opts" role="group" aria-label="Clock size and place">
+          <button type="button" data-csize="small">Small · in the bar</button>
+          <button type="button" data-csize="big">Big · above search</button>
+        </div>
+      </div>
+      <div class="set-sub" id="clock-sub">
+        <div class="set-row" id="clock-face-row">
+          <span class="set-name">Face</span>
+          <div class="phase-opts" id="clock-face-opts" role="group" aria-label="Clock face">
+            <button type="button" data-cface="digital">Digital</button>
+            <button type="button" data-cface="analog">Analog</button>
+          </div>
+        </div>
+        <div class="set-row" id="clock-fmt-row">
+          <span class="set-name">Format</span>
+          <div class="phase-opts" id="clock-opts" role="group" aria-label="Clock format">
+            <button type="button" data-clock="24">24h</button>
+            <button type="button" data-clock="12">12h</button>
+          </div>
+          <label class="set-check"><input type="checkbox" id="clock-sec" /> Seconds</label>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Zone</span>
+        <label class="set-check"><input type="checkbox" id="tz-on" /> Show another time zone</label>
+      </div>
+      <div class="set-row" id="tz-row" hidden>
+        <span class="set-name"></span>
+        <select class="set-input" id="tz-select" aria-label="Clock time zone"></select>
+      </div>
+
+      <div class="set-sec">Greeting</div>
       <label class="set-row">
-        <span class="set-name">Text</span>
-        <input class="set-input" id="set-label" type="text" maxlength="24" spellcheck="false"
-               autocomplete="off" placeholder="home" aria-label="Pill text" />
+        <span class="set-name">Name</span>
+        <input class="set-input" id="set-greet" type="text" maxlength="24" spellcheck="false"
+               autocomplete="off" placeholder="greet me by name…" aria-label="Greeting name" />
       </label>
-      <div class="set-row">
-        <span class="set-name">Clock</span>
-        <div class="phase-opts" id="clock-opts" role="group" aria-label="Clock format">
-          <button type="button" data-clock="24">24h</button>
-          <button type="button" data-clock="12">12h</button>
-          <button type="button" data-clock="sec">24h + sec</button>
-        </div>
+
+      <div class="set-sec">Show</div>
+      <div class="phase-opts" id="show-opts" role="group" aria-label="Show or hide elements">
+        <button type="button" data-show="clock">Clock</button>
+        <button type="button" data-show="greeting">Greeting</button>
+        <button type="button" data-show="input">Search</button>
+        <button type="button" data-show="time">Info bar</button>
+        <button type="button" data-show="widgets">Widgets</button>
+        <button type="button" data-show="celestial">Planet</button>
+        <button type="button" data-show="stars">Stars</button>
+        <button type="button" data-show="help">Hints</button>
+        <button type="button" data-show="pulse">Pulse</button>
       </div>
-      <div class="set-row">
-        <span class="set-name">Show</span>
-        <div class="phase-opts" id="show-opts" role="group" aria-label="Show or hide elements">
-          <button type="button" data-show="celestial">Planet</button>
-          <button type="button" data-show="stars">Stars</button>
-          <button type="button" data-show="input">Input</button>
-          <button type="button" data-show="time">Time</button>
-          <button type="button" data-show="help">Help</button>
-          <button type="button" data-show="pulse">Pulse</button>
-        </div>
-      </div>
+
+      <div class="set-sec">Quick bar</div>
       <div class="set-row" id="tabs-row">
-        <span class="set-name">Bar</span>
+        <span class="set-name">Shows</span>
         <div class="phase-opts" id="tabs-opts" role="group" aria-label="Quick bar on top">
           <button type="button" data-tabs="off">Off</button>
           <button type="button" data-tabs="top">Most used</button>
           <button type="button" data-tabs="recent">Recent</button>
           <button type="button" data-tabs="bookmarks">Bookmarks</button>
+          <button type="button" data-tabs="custom">My links</button>
         </div>
-      </div>
-      <div class="set-row">
-        <span class="set-name">Reset</span>
-        <button type="button" class="wall-btn" id="reset-all">Reset all settings…</button>
       </div>
     </div>
 
+    <!-- ============ LINKS ============ -->
+    <div class="set-pane" data-pane="links" role="tabpanel" hidden>
+      <div class="set-row link-add-row">
+        <input class="set-input" id="link-label" type="text" maxlength="32" placeholder="Label" aria-label="Link label" />
+        <input class="set-input" id="link-url" type="text" maxlength="300" placeholder="https://…" aria-label="Link URL" />
+        <input class="set-input link-icon-in" id="link-icon" type="text" maxlength="4" placeholder="🌤" aria-label="Icon: emoji or letter" />
+        <button type="button" class="wall-btn" id="link-add">Add</button>
+      </div>
+      <p class="set-note">Drag a row onto another’s top or bottom edge to reorder, onto its middle to group into a folder ·
+        <span class="key">Alt</span>+<span class="key">1</span>–<span class="key">9</span> opens the first links ·
+        right-click a chip in the top bar to edit or remove it. Shown when Layout → Quick bar is “My links”.</p>
+      <div class="link-list" id="link-list"></div>
+    </div>
+
+    <!-- ============ SEARCH ============ -->
     <div class="set-pane" data-pane="search" role="tabpanel" hidden>
       <div class="set-row">
         <span class="set-name">Engine</span>
@@ -221,10 +324,37 @@
           <button type="button" class="opt-action" id="history-clear">Clear</button>
         </div>
       </div>
+      <div class="set-sec">Your own engine</div>
+      <div class="set-row">
+        <input class="set-input" id="set-cengine-name" type="text" maxlength="20" spellcheck="false"
+               autocomplete="off" placeholder="name" aria-label="Custom search engine name" style="flex:0.6" />
+        <input class="set-input" id="set-cengine-url" type="text" maxlength="300" spellcheck="false"
+               autocomplete="off" placeholder="https://…/?q={q}" aria-label="Custom search engine URL template" />
+      </div>
+      <p class="set-note">Put <code>{q}</code> where the query goes (appended at the end when omitted). Clear both fields to remove it.</p>
       <div class="set-bangs" id="set-bangs"></div>
     </div>
 
-    <div class="set-pane" data-pane="weather" role="tabpanel" hidden>
+    <!-- ============ WIDGETS ============ -->
+    <div class="set-pane" data-pane="widgets" role="tabpanel" hidden>
+      <div class="set-sec">Widgets</div>
+      <div id="widget-list"></div>
+      <!-- per-widget settings: moved under their widget by app.js -->
+      <div class="wl-set" data-for="quotes">
+        <textarea class="set-input set-css" id="set-quotes" rows="3" spellcheck="false"
+                  placeholder="Your quotes — one per line: Author, quote" aria-label="Custom quotes"></textarea>
+      </div>
+      <div class="wl-set" data-for="pomo">
+        <div class="wall-actions">
+          <label class="pomo-cfg">work <input class="set-input pomo-in" id="pomo-work" type="number" min="1" max="180" value="25" aria-label="Work minutes" /></label>
+          <label class="pomo-cfg">short <input class="set-input pomo-in" id="pomo-short" type="number" min="1" max="60" value="5" aria-label="Short break minutes" /></label>
+          <label class="pomo-cfg">long <input class="set-input pomo-in" id="pomo-long" type="number" min="1" max="120" value="15" aria-label="Long break minutes" /></label>
+        </div>
+      </div>
+      <p class="set-note"><b>Pin</b> puts a widget on the page — drag its header to move it anywhere; it stays put when the
+        side panel (<span class="key">W</span>) is closed. <button type="button" class="wall-btn" id="widget-reset">Unpin all</button></p>
+
+      <div class="set-sec">Weather · in the info bar</div>
       <div class="set-row">
         <span class="set-name">Wx</span>
         <div class="phase-opts" id="wx-opts" role="group" aria-label="Weather">
@@ -233,7 +363,7 @@
         </div>
       </div>
       <div class="set-row" id="wx-loc-row">
-        <span class="set-name">Loc</span>
+        <span class="set-name">Place</span>
         <div class="phase-opts" id="wx-loc-opts" role="group" aria-label="Weather location">
           <button type="button" data-wxloc="auto">Auto</button>
           <button type="button" data-wxloc="pick" id="wx-pick-btn">Pick…</button>
@@ -269,6 +399,63 @@
           <button type="button" data-units="f">°F</button>
         </div>
       </div>
+      <p class="set-note">Click the weather in the info bar for feels-like, humidity, wind, sun times and the next hours.</p>
+    </div>
+
+    <!-- ============ MORE ============ -->
+    <div class="set-pane" data-pane="more" role="tabpanel" hidden>
+      <div class="set-sec">Presets</div>
+      <div class="set-row">
+        <input class="set-input" id="preset-name" type="text" maxlength="32" spellcheck="false"
+               autocomplete="off" placeholder="name this setup…" aria-label="Preset name" />
+        <button type="button" class="wall-btn" id="preset-save">Save current</button>
+      </div>
+      <div class="preset-list" id="preset-list"></div>
+      <div class="set-row" style="margin-top:10px">
+        <span class="set-name">Starter</span>
+        <div class="phase-opts" id="profile-opts" role="group" aria-label="Built-in presets">
+          <button type="button" data-profile="midnight">Midnight</button>
+          <button type="button" data-profile="sunrise">Sunrise</button>
+          <button type="button" data-profile="paper">Paper</button>
+        </div>
+      </div>
+      <p class="set-note">A preset remembers how the page looks and behaves — not your notes, links or quotes.</p>
+
+      <div class="set-sec">Backup</div>
+      <div class="wall-actions">
+        <button type="button" class="wall-btn" id="data-download">Download file</button>
+        <button type="button" class="wall-btn" id="data-copy">Copy JSON</button>
+        <button type="button" class="wall-btn" id="data-import-file">Import file…</button>
+        <input type="file" id="data-import-input" accept="application/json,.json" hidden />
+      </div>
+      <details>
+        <summary>Paste JSON instead</summary>
+        <textarea class="set-input set-css" id="data-import-ta" rows="4" spellcheck="false"
+                  placeholder="paste exported JSON here" aria-label="Settings to import"></textarea>
+        <div class="wall-actions" style="margin-top:8px">
+          <button type="button" class="wall-btn" id="data-import">Apply &amp; reload</button>
+        </div>
+      </details>
+      <p class="set-note">The backup includes your notes, links and name — treat the file like a password.</p>
+
+      <div class="set-sec">Browser tab</div>
+      <label class="set-row">
+        <span class="set-name">Title</span>
+        <input class="set-input" id="set-tabtitle" type="text" maxlength="80" spellcheck="false"
+               autocomplete="off" placeholder="Home — {time}" aria-label="Tab title, {time} is the clock" />
+      </label>
+      <label class="set-row">
+        <span class="set-name">Icon</span>
+        <input class="set-input" id="set-favicon" type="text" maxlength="8" spellcheck="false"
+               autocomplete="off" placeholder="an emoji, e.g. 🌤" aria-label="Favicon emoji" />
+      </label>
+
+      <div class="set-sec">Custom CSS</div>
+      <textarea class="set-input set-css" id="set-css" rows="4" spellcheck="false"
+                placeholder="/* e.g. .pill { letter-spacing: 0.2em } */" aria-label="Custom CSS"></textarea>
+
+      <div class="set-sec">Reset</div>
+      <button type="button" class="wall-btn" id="reset-all">Reset all settings…</button>
     </div>
   </div>
 
@@ -279,7 +466,7 @@
         <button type="button" class="mod-icon-btn" id="wall-close" aria-label="Close">×</button>
       </header>
       <div class="wall-drop" id="wall-drop">
-        <strong>Drop images here</strong>
+        <strong>Drop images or videos here</strong>
         <span>or pick below · saved locally, never uploaded</span>
       </div>
       <div class="wall-strip" id="wall-strip" hidden></div>
@@ -305,19 +492,19 @@
         </div>
       </div>
       <div class="wall-url-row">
-        <input type="text" id="wall-url" placeholder="paste image URL…" spellcheck="false" autocomplete="off" />
+        <input type="text" id="wall-url" placeholder="paste image or video URL…" spellcheck="false" autocomplete="off" />
         <button type="button" class="wall-btn" id="wall-url-load">Load</button>
       </div>
       <div class="wall-actions-row">
         <button type="button" class="wall-btn" id="wall-browse">Browse files…</button>
         <button type="button" class="wall-btn" id="wall-clear-modal">Clear all</button>
-        <input type="file" id="wall-input" accept="image/*" multiple hidden />
+        <input type="file" id="wall-input" accept="image/*,video/*" multiple hidden />
       </div>
     </div>
   </div>
 
   <footer class="hint">
-    <span class="key">/</span> focus &nbsp;·&nbsp; <span class="key">Enter</span> search &nbsp;·&nbsp; <span class="key">Ctrl Enter</span> new tab &nbsp;·&nbsp; <span class="key">!yt</span> bangs &nbsp;·&nbsp; <span class="key">W</span> widgets
+    <span class="key">/</span> focus &nbsp;·&nbsp; <span class="key">Enter</span> search &nbsp;·&nbsp; <span class="key">Ctrl Enter</span> new tab &nbsp;·&nbsp; <span class="key">!yt</span> bangs &nbsp;·&nbsp; <span class="key">W</span> widgets &nbsp;·&nbsp; <span class="key">?</span> help
   </footer>
 
   <button class="mod-tab" id="mod-tab" type="button" aria-label="Toggle widget layer" aria-expanded="false">
@@ -340,6 +527,34 @@
     </header>
     <div class="mod-body" id="mod-body"></div>
   </aside>
+
+  <div class="help-overlay" id="help-overlay" hidden>
+    <div class="help-box" role="dialog" aria-label="Help and shortcuts">
+      <header class="wall-head">
+        <span class="wall-title">HELP</span>
+        <button type="button" class="mod-icon-btn" id="help-close" aria-label="Close help">×</button>
+      </header>
+      <div class="help-grid">
+        <div class="h-row"><span><span class="key">/</span> or <span class="key">Ctrl K</span> focus search</span><span>search</span></div>
+        <div class="h-row"><span><span class="key">Enter</span> / <span class="key">Ctrl Enter</span> / <span class="key">Shift Enter</span></span><span>same / new / background tab</span></div>
+        <div class="h-row"><span><span class="key">Alt ↑</span> <span class="key">Alt ↓</span> in the box</span><span>switch engine</span></div>
+        <div class="h-row"><span><span class="key">!</span> then <span class="key">Tab</span></span><span>complete a bang (!yt …)</span></div>
+        <div class="h-row"><span><span class="key">↑</span> <span class="key">↓</span> <span class="key">Enter</span> <span class="key">Esc</span></span><span>walk suggestions</span></div>
+        <div class="h-row"><span><span class="key">Shift Del</span> on a recent</span><span>remove it</span></div>
+        <div class="h-row"><span><span class="key">W</span></span><span>toggle the widget layer</span></div>
+        <div class="h-row"><span>drag a widget header</span><span>pin it anywhere on the page</span></div>
+        <div class="h-row"><span><span class="key">Alt 1</span>–<span class="key">9</span></span><span>open a quick link</span></div>
+        <div class="h-row"><span>right-click the page</span><span>links · wallpaper · quote · widgets</span></div>
+        <div class="h-row"><span>click weather in the pill</span><span>details popover</span></div>
+        <div class="h-row"><span>click a quote / vibes card</span><span>next one</span></div>
+        <div class="h-row"><span><span class="key">?</span></span><span>this help</span></div>
+        <div class="h-row"><span><span class="key">Esc</span></span><span>close panels &amp; menus</span></div>
+      </div>
+      <p class="set-note">Everything lives on your machine: settings in localStorage, wallpapers in IndexedDB. No accounts, no telemetry.</p>
+    </div>
+  </div>
+
+  <div class="ctx-menu" id="ctx-menu" hidden role="menu"></div>
 
   <script src="app.js"></script>
 </body>

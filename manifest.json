@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Home",
-  "version": "1.4.0",
-  "description": "Pixel-art start page: day/night sky, 11 backgrounds, bangs, search history and a bookmarks bar.",
+  "version": "1.5.0",
+  "description": "Pixel-art start page: day/night sky, 13 backgrounds, greeting, quotes/notes/pomodoro widgets, custom links, bangs and a bookmarks bar.",
   "permissions": ["tabs", "storage", "bookmarks", "geolocation", "favicon"],
   "background": {
     "service_worker": "background.js"

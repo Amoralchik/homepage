@@ -4,7 +4,7 @@
 
 **A pixel-art new tab page for Chrome — a living sky that follows your clock, wrapped around a fast, keyboard-first search box.**
 
-[![Live demo](https://img.shields.io/badge/demo-live-6c8cff?style=flat-square&logo=githubpages&logoColor=white)](https://amoralchik.github.io/homepage/) [![Manifest V3](https://img.shields.io/badge/chrome-manifest%20v3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](manifest.json) [![Version](https://img.shields.io/badge/version-1.4.0-f0a830?style=flat-square)](manifest.json) [![No build step](https://img.shields.io/badge/build-none%20·%20vanilla%20JS-2fa869?style=flat-square)](#project-structure) [![License: MIT](https://img.shields.io/badge/license-MIT-e05a94?style=flat-square)](LICENSE)
+[![Live demo](https://img.shields.io/badge/demo-live-6c8cff?style=flat-square&logo=githubpages&logoColor=white)](https://amoralchik.github.io/homepage/) [![Manifest V3](https://img.shields.io/badge/chrome-manifest%20v3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](manifest.json) [![Version](https://img.shields.io/badge/version-1.5.0-f0a830?style=flat-square)](manifest.json) [![No build step](https://img.shields.io/badge/build-none%20·%20vanilla%20JS-2fa869?style=flat-square)](#project-structure) [![License: MIT](https://img.shields.io/badge/license-MIT-e05a94?style=flat-square)](LICENSE)
 
 [**Live demo**](https://amoralchik.github.io/homepage/) · [Install](#installation) · [Features](#features) · [Shortcuts](#keyboard-shortcuts) · [Customize](#customizing) · [Contributing](CONTRIBUTING.md)
 
@@ -19,9 +19,11 @@
 ## Highlights
 
 - **A sky that keeps time** — morning, day, evening and night palettes blend with the local clock; the pixel sun and moon arc across the screen.
-- **12 backgrounds × 12 themes** — Scene, Aurora, Retro, Lamp, Dither, Halftone, Particles and more, every one theme- and phase-aware.
-- **An omnibox, not just a box** — autocomplete, bangs (`!yt`, `!gh`, …), recent searches, URL detection, an instant calculator, and your open tabs and bookmarks.
-- **Live weather** — temperature in the pill and rain, snow, fog or storms drawn into the scenery, via [Open-Meteo](https://open-meteo.com) with no API key.
+- **13 backgrounds × 12 themes** — Scene, Aurora, Retro, Lamp, Dither, Halftone, Particles, Solid and more, every one theme- and phase-aware — plus your own **photos and videos** with blur / brightness controls.
+- **An omnibox, not just a box** — autocomplete, bangs (`!yt`, `!gh`, …), recent searches, URL detection, an instant calculator, and your open tabs and bookmarks — bring your own engine with a `{q}` URL template.
+- **Live weather** — temperature in the pill (click it for feels-like, humidity, wind, sun times and the next hours) and rain, snow, fog or storms drawn into the scenery, via [Open-Meteo](https://open-meteo.com) with no API key.
+- **Widgets that work** — a greeting that knows your name, a quote of the day, Markdown-lite notes and to-dos, a pomodoro timer with focus mode and a tab-title countdown — pin any widget to the page and drag it wherever you like.
+- **Your links, your page** — a custom quick-links bar with folders and drag-reorder, `Alt`+`1`–`9` to open, a right-click menu on the page, custom CSS / fonts, and settings you can export, import and share.
 - **Private by design** — no accounts, no telemetry; everything lives in `localStorage` / IndexedDB on your machine.
 - **Zero dependencies** — plain HTML, CSS and JavaScript. No bundler, no framework, nothing to build.
 
@@ -98,8 +100,10 @@
     <td><img src="docs/screenshots/feat-widgets.png" alt="Widget layer with a bus tracker and good-vibes card"></td>
     <td valign="middle">
       <b>Widget layer</b><br>
-      <sub>Press <kbd>W</kbd> for a HUD of small persistent widgets — a bus tracker,
-      “good vibes” reminders, or your own via <a href="#personal-mods-local-only"><code>mods.js</code></a>.</sub>
+      <sub>Press <kbd>W</kbd> for a HUD of small persistent widgets — a quote of the day,
+      Markdown-lite notes, a pomodoro timer, a bus tracker, or your own via
+      <a href="#personal-mods-local-only"><code>mods.js</code></a>. Drag a widget by its
+      header to pin it anywhere on the page.</sub>
     </td>
   </tr>
 </table>
@@ -195,7 +199,8 @@ The sun (06–21) and moon (21–06) travel left → right, arcing high at mid-p
 | **Grain** | Vivid gradient with film grain |
 | **Halftone** | Your wallpaper as glowing dot-matrix art |
 | **Dither** | Bayer-dithered pixel art of your wallpaper, fading out behind the search |
-| **Photo** | Your wallpaper as-is, with a slow drift and a phase-tinted veil |
+| **Photo** | Your wallpaper as-is — image or muted looping video — with a slow drift and a phase-tinted veil |
+| **Solid** | A two-color gradient of your choosing, stars still twinkle |
 
 Every background is theme- and phase-aware — except the Lamp, which ignores the theme picker like a real lamp would.
 **Pointer effects:** grids, dots, dither pixels and particles light up around the cursor and clicks send a ripple through the scene (off under **Look → Motion** or with `prefers-reduced-motion`).
@@ -209,7 +214,7 @@ Every background is theme- and phase-aware — except the Lamp, which ignores th
 
 - **Themes:** Classic, Dark, Bright, Cyberpunk, Violet, Red, Amber, Green, Teal, Blue, Rose — each recolours the planet, glow, sky, grid, stars and UI accents while the day cycle keeps running.
 - **Image theme:** samples your wallpaper's dominant colour (accent, planet) and a second distinct hue (sun, borders); mostly-gray pictures give a neutral monochrome theme.
-- **Wallpapers:** save up to 5 — pick files, drag & drop or paste a URL — stored locally in IndexedDB, never synced. Used by **Photo**, **Halftone** and **Dither**.
+- **Wallpapers:** save up to 5 — pick files (images **and videos**), drag & drop or paste a URL — stored locally in IndexedDB, never synced. Used by **Photo**, **Halftone** and **Dither**; the Look tab adds **blur** and **brightness** sliders.
   - **Shuffle:** a random one shows on every new tab (never the same twice in a row), or set it to change every 1 / 5 / 15 / 60 minutes with a crossfade.
   - **Schedule:** daily rules like *from 18:00 show #3*; rules take priority over shuffling, and clicking a thumbnail overrides them until the next rule starts.
 
@@ -239,8 +244,38 @@ A line of shortcuts pinned to the top of the page:
 - **Recent** — the tabs you had open last, across windows; click to focus that exact tab.
 - **Most used** — your top sites, ranked by a tiny background tracker of tab activations and page loads.
 - **Bookmarks** — mirrors your bookmarks bar, with real folder nesting, item counts and **Open all**.
+- **My links** — your own links, managed in **Settings → Links**: add with label, URL and an emoji/letter icon; drag a row onto the top or bottom edge of another to reorder, onto its middle to fold both into a folder (or into an existing folder). `Alt`+`1`–`9` opens the first ones, right-click a chip to edit or remove it.
 
 Overflow tucks into a "··· more" chip, favicons come from Chrome's cache, and the bar is fully keyboard-navigable (<kbd>←</kbd>/<kbd>→</kbd> between chips, <kbd>↓</kbd> opens a menu, <kbd>Esc</kbd> closes).
+
+</details>
+
+<details>
+<summary><b>Widgets & personal touches</b> — greeting, quotes, notes, pomodoro</summary>
+
+<br>
+
+Open the panel with <kbd>W</kbd> (or switch widgets on in **Settings → Widgets**), and press a widget's **pin** to put it on the page — drag its header to move it anywhere (it snaps to a small grid and keeps its place when the window resizes). Pinned widgets stay when the side panel is closed; unpin, double-click the header or drop it back over the panel to dock it.
+
+- **Greeting** — a phase-aware line above the search ("Good evening, Ada"); type your name in **Settings → Layout** and it switches on (toggle it under **Show → Greeting**).
+- **Quote** — a quote of the day from the built-in set plus your own (`Author, quote` per line, right under the Quote switch in **Settings → Widgets**); click the card or pick "Next quote" in the right-click menu for another.
+- **Notes** — Markdown-lite: `#`/`##`/`###` headings, `-` bullets and `- [ ]`/`- [x]` checkboxes you can tick straight in the card. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+`1`–`5` prefix the current line while editing.
+- **Pomodoro** — work / short / long sessions (durations in settings), an alarm when a session ends, a **focus mode** that hides the noisy chrome, a countdown in the browser tab's title, and it keeps running across closed tabs.
+
+**Clock:** keep it **small** in the info bar or make it **big** above the search — the big one can be a pixel **digital** clock or an **analog** face, with an optional seconds display. Tick **Show another time zone** to run the clock in any zone (the info bar names it). The **More** tab adds a custom browser-**tab title** with a `{time}` placeholder and an **emoji favicon**.
+
+</details>
+
+<details>
+<summary><b>Own the page</b> — context menu, custom CSS, import/export</summary>
+
+<br>
+
+- **Right-click the page** — add/manage links, next wallpaper, next quote, toggle widgets, settings, help. Right-clicking one of *your* links edits or removes it.
+- **Fonts & custom CSS** — a font picker for the whole page (pixel, sans, mono, serif and handwritten families from Google Fonts, your system font, or **any installed font** — Chrome can list them for you), with an option to keep the pixel font for small labels; plus a **Custom CSS** box under **More**.
+- **Custom search engine** (**Search → +Engine**) — any site with a `{q}` URL template joins Google / DuckDuckGo / Perplexity everywhere: the dropdown, <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> and providers.
+- **Presets & backup** (**More** tab) — **save your current setup as a named preset** and switch back to it any time (presets leave your notes, links and quotes alone), three starter presets (Midnight, Sunrise, Paper), and a full backup: download / copy every `home:*` key as JSON and import it from a file or pasted text.
+- **Help overlay** — <kbd>?</kbd> lists every shortcut.
 
 </details>
 
@@ -249,9 +284,9 @@ Overflow tucks into a "··· more" chip, favicons come from Chrome's cache, and
 
 <br>
 
-The gear in the bottom-right opens a tabbed panel — **Look** (theme, phase, background, wallpaper, motion), **Layout** (pill text, 24h / 12h / seconds clock, show/hide toggles, quick bar), **Search** (default engine, where results open, suggestions, history, bang cheat sheet) and **Weather**. Only the knobs that matter for the current background are shown.
+The gear in the bottom-right opens a tabbed panel — **Look** (theme, phase, a background dropdown with only the knobs that matter for it — wallpaper, dot size, blur / brightness, solid colors — motion and font), **Layout** (clock size / face / format / time zone, greeting name, show/hide toggles, quick bar), **Links** (your own quick links with folders and drag-reorder), **Search** (default engine, your own engine, where results open, suggestions, history, bang cheat sheet), **Widgets** (switch each widget on or off, pin it to the page, its settings, and weather) and **More** (presets, backup, browser-tab title & icon, custom CSS, reset).
 
-**Show/hide** toggles the planet, stars, search input, time pill, help dock and the pulsing search border — for a completely minimal (or maximal) layout. **Reset all settings…** wipes everything.
+**Show/hide** toggles the clock, greeting, search box, info bar, widgets, planet, stars, hints and the pulsing search border — for a completely minimal (or maximal) layout. **Reset all settings…** (under **More**) wipes everything.
 
 </details>
 
@@ -269,6 +304,9 @@ The gear in the bottom-right opens a tabbed panel — **Look** (theme, phase, ba
 | <kbd>Shift</kbd>+<kbd>Delete</kbd> | Remove a recent search |
 | <kbd>Esc</kbd> | Dismiss suggestions / close panels |
 | <kbd>W</kbd> | Toggle the widget layer |
+| <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>9</kbd> | Open one of the first quick-bar links |
+| <kbd>?</kbd> | Help overlay with every shortcut |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>5</kbd> (in Notes) | Heading / bullet / to-do prefix |
 
 ## Privacy & permissions
 

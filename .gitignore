@@ -5,3 +5,5 @@ Thumbs.db
 .zcodeignore
 mods.js
 .env
+.zcode/
+shaders/

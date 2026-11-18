@@ -393,7 +393,16 @@ const bgApi = (function background() {
   let bgMode = 'scene';
   let modeState = {};
   let wallpaperImg = null;
+  let wallpaperVideo = null; // video wallpapers play live in photo mode; the img stays a static sample
   let dotSize = 14;
+  // user filters for wallpaper modes (blur/brightness) + the solid gradient colors
+  let filters = { blur: 0, bright: 1 };
+  let solidA = '#101a3a', solidB = '#3a2a6a';
+  // `scale` = target-canvas pixels per screen pixel, so the blur slider means the
+  // same on-screen softness on a full-res photo canvas and a tiny dither grid
+  const filterCss = (scale = 1) =>
+    (filters.blur > 0 || filters.bright !== 1)
+      ? `blur(${+(filters.blur * scale).toFixed(2)}px) brightness(${filters.bright})` : 'none';
 
   // pointer interplay: the grid/dots/particles brighten softly around the
   // cursor, and a click on empty background sends a ripple through the scene.
@@ -652,7 +661,31 @@ const bgApi = (function background() {
       case 'halftone': return drawHalftone(t);
       case 'dither': return drawDither();
       case 'photo': return drawPhoto(t);
+      case 'solid': return drawSolid(t);
     }
+  }
+
+  /* solid — a two-color gradient that still breathes with the phase stars */
+  function drawSolid(t) {
+    const g = ctx.createLinearGradient(0, 0, W * 0.25, H);
+    g.addColorStop(0, solidA);
+    g.addColorStop(1, solidB);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    drawStarsFaint(t, 0.8);
+    const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // a video wallpaper only needs to play while Photo draws it live; the other
+  // wallpaper modes use a still frame, so don't burn CPU decoding it there
+  function syncVideoPlayback() {
+    if (!wallpaperVideo) return;
+    if (bgMode === 'photo' && !reduced) wallpaperVideo.play().catch(() => { });
+    else wallpaperVideo.pause();
   }
 
   /* photo — the wallpaper itself, cover-fit with a slow Ken Burns drift and a
@@ -660,6 +693,7 @@ const bgApi = (function background() {
   const PHOTO_VEIL = { morning: 0.16, day: 0.08, evening: 0.34, night: 0.5 };
 
   function buildPhoto() {
+    if (wallpaperVideo) { modeState.photo = { video: wallpaperVideo, over: 1.06 }; return; }
     const src = wallpaperImg;
     if (!src || !src.width) { modeState.photo = null; return; }
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -668,7 +702,11 @@ const bgApi = (function background() {
     c.width = Math.round(W * OVER * dpr);
     c.height = Math.round(H * OVER * dpr);
     const oc = c.getContext('2d');
-    const scale = Math.max(c.width / src.width, c.height / src.height);
+    oc.filter = filterCss(dpr);
+    // blur pulls in transparent pixels at the edges; overdraw by ~2 radii so
+    // the frame stays opaque instead of getting a dark halo
+    const pad = filters.blur * dpr * 2;
+    const scale = Math.max((c.width + pad * 2) / src.width, (c.height + pad * 2) / src.height);
     const dw = src.width * scale, dh = src.height * scale;
     oc.imageSmoothingQuality = 'high';
     oc.drawImage(src, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
@@ -677,12 +715,27 @@ const bgApi = (function background() {
 
   function drawPhoto(t) {
     const p = modeState.photo;
+    if (!p) return;
     const pw = W * p.over, ph = H * p.over;
     const drift = reduced ? 0 : 1;
     const ox = (pw - W) / 2 * (1 + 0.9 * Math.sin(t / 23000) * drift);
     const oy = (ph - H) / 2 * (1 + 0.9 * Math.sin(t / 31000 + 1.3) * drift);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(p.img, -ox, -oy, pw, ph);
+    if (p.video) {
+      const v = p.video;
+      if (v.readyState >= 2 && v.videoWidth) {
+        ctx.filter = filterCss();
+        const scale = Math.max(pw / v.videoWidth, ph / v.videoHeight);
+        ctx.drawImage(v, (pw - v.videoWidth * scale) / 2 - ox, (ph - v.videoHeight * scale) / 2 - oy,
+          v.videoWidth * scale, v.videoHeight * scale);
+        ctx.filter = 'none';
+      } else {
+        ctx.fillStyle = '#04070f';
+        ctx.fillRect(0, 0, W, H);
+      }
+    } else {
+      ctx.drawImage(p.img, -ox, -oy, pw, ph);
+    }
     const A = PHOTO_VEIL[pal.phase] ?? 0.3, B = PHOTO_VEIL[pal.next] ?? A;
     const a = A + (B - A) * (pal.k || 0);
     const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -1187,6 +1240,7 @@ const bgApi = (function background() {
       off.width = cols; off.height = rows;
       const oc = off.getContext('2d');
       oc.imageSmoothingQuality = 'high';
+      oc.filter = filterCss(cols / W);
       const scale = Math.max(cols / src.width, rows / src.height);
       const dw = src.width * scale, dh = src.height * scale;
       oc.drawImage(src, (cols - dw) / 2, (rows - dh) / 2, dw, dh);
@@ -1286,6 +1340,7 @@ const bgApi = (function background() {
     off.width = cols;
     off.height = rows;
     const oc = off.getContext('2d');
+    oc.filter = filterCss(cols / W);
     if (src && src.width) {
       const scale = Math.max(cols / src.width, rows / src.height);
       const dw = src.width * scale;
@@ -1576,14 +1631,53 @@ const bgApi = (function background() {
     setMode(mode) {
       if (mode === bgMode) return;
       bgMode = mode;
+      syncVideoPlayback();
       buildModeExtras();
       if (reduced) draw(0);
     },
     setWallpaper(img) {
+      // stop and release the previous video, or it keeps decoding in the background
+      if (wallpaperVideo && wallpaperVideo !== img) {
+        wallpaperVideo.pause();
+        wallpaperVideo.removeAttribute('src');
+        wallpaperVideo.load();
+      }
       wallpaperImg = img;
+      wallpaperVideo = img instanceof HTMLVideoElement ? img : null;
+      syncVideoPlayback();
+      if (wallpaperVideo) {
+        // keep a static frame as the sample for dither/halftone once data arrives
+        const snap = () => {
+          if (wallpaperVideo.readyState >= 2 && wallpaperVideo.videoWidth) {
+            const c = document.createElement('canvas');
+            c.width = 320;
+            c.height = Math.max(1, Math.round(320 * wallpaperVideo.videoHeight / wallpaperVideo.videoWidth));
+            c.getContext('2d').drawImage(wallpaperVideo, 0, 0, c.width, c.height);
+            wallpaperImg = c;
+            if (bgMode === 'halftone') buildHalftoneSample();
+            if (bgMode === 'dither') buildDither();
+            if (reduced) draw(0);
+          }
+        };
+        wallpaperVideo.addEventListener('loadeddata', snap, { once: true });
+        snap();
+      }
       if (bgMode === 'halftone') buildHalftoneSample();
       if (bgMode === 'dither') buildDither();
       if (bgMode === 'photo') buildPhoto();
+      if (reduced) draw(0);
+    },
+    // blur/brightness over wallpaper modes, set from Settings → Look
+    setFilters(blur, bright) {
+      filters = { blur: Math.max(0, Math.min(24, +blur || 0)), bright: Math.max(0.5, Math.min(1.5, +bright || 1)) };
+      if (bgMode === 'photo') buildPhoto();
+      if (bgMode === 'halftone') buildHalftoneSample();
+      if (bgMode === 'dither') buildDither();
+      if (reduced) draw(0);
+    },
+    setSolid(a, b) {
+      if (a) solidA = a;
+      if (b) solidB = b;
       if (reduced) draw(0);
     },
     // cursor glow + click ripples (persisted on/off from settings)
@@ -1627,13 +1721,17 @@ const bgApi = (function background() {
   let provider = PROVIDERS[0];
   try {
     const saved = localStorage.getItem('home:provider');
-    provider = PROVIDERS.find(p => p.id === saved) || provider;
+    provider = PROVIDERS.find(p => p.id === saved) || (saved === 'custom' ? customProvider() : null) || provider;
   } catch (e) { /* storage unavailable */ }
 
   /* ---------- day/night theming ---------- */
 
   const VALID_PHASES = ['morning', 'day', 'evening', 'night'];
-  const DEFAULT_SHOW = { celestial: true, stars: true, input: true, time: true, help: true, pulse: true };
+  // greeting is opt-in (typing a name switches it on); the rest default on
+  const DEFAULT_SHOW = {
+    celestial: true, stars: true, input: true, time: true, help: true, pulse: true,
+    clock: true, greeting: false, widgets: true,
+  };
 
   function forcedPhase() {
     // URL preview wins, then a phase frozen in settings, then the real clock
@@ -1677,6 +1775,7 @@ const bgApi = (function background() {
     if (!show.stars) pal.starA = 0;
     pal.sparklesOn = show.stars;
     bgApi.setPalette(pal, DayCycle.sunPos(now, forced), DayCycle.moonPos(now, forced));
+    renderGreeting();
   }
   applyDayCycle();
   setInterval(applyDayCycle, 30 * 1000);
@@ -1685,8 +1784,6 @@ const bgApi = (function background() {
 
   const settingsBtn = document.getElementById('settings-btn');
   const settingsEl = document.getElementById('settings');
-  const labelInput = document.getElementById('set-label');
-  const pillLabel = document.getElementById('pill-label');
   const phaseOpts = document.getElementById('phase-opts');
 
   function store(key, value) {
@@ -1700,16 +1797,6 @@ const bgApi = (function background() {
     return !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
       || el instanceof HTMLSelectElement || el.isContentEditable);
   }
-
-  // pill text
-  const savedLabel = (loadStored('home:label') || '').trim() || 'home';
-  pillLabel.textContent = savedLabel;
-  labelInput.value = savedLabel === 'home' ? '' : savedLabel;
-  labelInput.addEventListener('input', () => {
-    const v = labelInput.value.trim() || 'home';
-    pillLabel.textContent = v;
-    store('home:label', v);
-  });
 
   // frozen phase
   function renderPhaseOpts() {
@@ -1761,7 +1848,10 @@ const bgApi = (function background() {
     document.body.classList.toggle('no-time', !show.time);
     document.body.classList.toggle('no-help', !show.help);
     document.body.classList.toggle('no-pulse', !show.pulse);
-    applyDayCycle();
+    document.body.classList.toggle('no-clock', !show.clock);
+    document.body.classList.toggle('no-widgets', !show.widgets);
+    applyDayCycle(); // also re-renders the greeting
+    if (typeof tick === 'function' && clockReady) tick();
   }
 
   function renderShowOpts() {
@@ -1784,8 +1874,8 @@ const bgApi = (function background() {
   applyShow(loadShow());
 
   // background style
-  const bgOpts = document.getElementById('bg-opts');
-  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone', 'dither', 'photo'];
+  const bgSelect = document.getElementById('bg-select');
+  const VALID_BGS = ['scene', 'aurora', 'grid', 'lamp', 'noise', 'particles', 'retro', 'shooting', 'grain', 'halftone', 'dither', 'photo', 'solid'];
   const WALL_BGS = ['halftone', 'dither', 'photo']; // modes that draw the wallpaper
   function currentBg() {
     const b = loadStored('home:bg');
@@ -1793,23 +1883,21 @@ const bgApi = (function background() {
   }
   function renderBgOpts() {
     const cur = currentBg();
-    for (const b of bgOpts.children) {
-      b.classList.toggle('active', b.dataset.bg === cur);
-    }
+    bgSelect.value = cur;
     // only show the knobs that do something in the current mode
     document.getElementById('wall-row').hidden = !WALL_BGS.includes(cur);
     document.getElementById('dots-row').hidden = cur !== 'halftone';
+    document.getElementById('solid-row').hidden = cur !== 'solid';
+    const wallKnobs = WALL_BGS.includes(cur);
+    document.getElementById('bg-blur-row').hidden = !wallKnobs;
+    document.getElementById('bg-bright-row').hidden = !wallKnobs;
   }
   function setBg(mode) {
     store('home:bg', mode);
     bgApi.setMode(mode);
     renderBgOpts();
   }
-  bgOpts.addEventListener('click', e => {
-    const b = e.target.closest('button[data-bg]');
-    if (!b) return;
-    setBg(b.dataset.bg);
-  });
+  bgSelect.addEventListener('change', () => setBg(bgSelect.value));
   renderBgOpts();
   bgApi.setMode(currentBg());
 
@@ -1871,16 +1959,152 @@ const bgApi = (function background() {
     });
   }
 
+  // a stored video (data:video/…) or a pasted link to a video file
+  function isVideoSrc(src) {
+    return typeof src === 'string' &&
+      (src.startsWith('data:video/') || /^https?:\/\/[^?#]+\.(mp4|webm|ogv|ogg|mov|m4v)([?#]|$)/i.test(src));
+  }
+
+  // cheap identity for a wallpaper source (data: URLs are megabytes long)
+  function wallKey(src) {
+    return typeof src === 'string' ? `${src.length}:${src.slice(0, 48)}…${src.slice(-48)}` : '';
+  }
+
+  /* fast first paint: the wallpaper the NEXT new tab will show is prepared
+     ahead of time — already cover-fitted to the screen, encoded as a small
+     WebP, with its Image-theme colors — and kept under one IndexedDB key.
+     A new tab reads just that (not the whole multi-MB list), decodes it off
+     the main thread and paints it; the full list loads afterwards. With
+     several wallpapers the next pick is made in advance, so shuffling never
+     needs a visible second swap. */
+  const READY_KEY = 'wallReady';
+  let readyTimer = 0;
+  function scheduleReady() {
+    clearTimeout(readyTimer);
+    // after the page settles, so preparing never competes with first paint
+    readyTimer = setTimeout(() => {
+      const run = () => prepareReady().catch(() => { });
+      'requestIdleCallback' in window ? requestIdleCallback(run, { timeout: 4000 }) : run();
+    }, 1500);
+  }
+  function readyTargetSize() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    let w = Math.round(Math.max(screen.width, innerWidth) * dpr);
+    let h = Math.round(Math.max(screen.height, innerHeight) * dpr);
+    const k = Math.min(1, 3840 / Math.max(w, h)); // 4K is plenty for a background
+    return { w: Math.round(w * k), h: Math.round(h * k) };
+  }
+  // a decoded still of any wallpaper source (videos give their first frame)
+  function loadStill(src) {
+    return new Promise(resolve => {
+      if (isVideoSrc(src)) {
+        const v = document.createElement('video');
+        v.muted = true; v.playsInline = true; v.preload = 'auto';
+        if (!src.startsWith('data:')) v.crossOrigin = 'anonymous';
+        v.onloadeddata = () => resolve(v);
+        v.onerror = () => resolve(null);
+        v.src = src;
+        return;
+      }
+      const img = new Image();
+      if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+  async function prepareReady() {
+    if (!walls.length) return;
+    // which wallpaper will the next tab show? a schedule rule, else (with
+    // shuffle) a random one other than the current, else the current one
+    const r = activeRule();
+    const i = r ? r.i : walls.length > 1 ? pickRandomWall() : 0;
+    const src = walls[i];
+    if (!src) return;
+    const key = wallKey(src);
+    const size = readyTargetSize();
+    // prepared stills are kept per wallpaper ('wallStill:<key>'), so each
+    // image is processed once; the pointer just says which one is next
+    const ptr = (await idbGet(READY_KEY).catch(() => null)) || {};
+    const live = new Set(walls.map(wallKey));
+    const kept = (ptr.keys || []).filter(k => live.has(k));
+    for (const k of ptr.keys || []) if (!live.has(k)) await idbSet('wallStill:' + k, null).catch(() => { });
+    const have = kept.includes(key) ? await idbGet('wallStill:' + key).catch(() => null) : null;
+    const point = theme => {
+      if (theme && i !== wallShown) { // the next tab paints this one first: cache its colors
+        store('home:imgtheme', JSON.stringify(theme));
+        store('home:imgthemeKey', key);
+      }
+      return idbSet(READY_KEY, { key, i, count: walls.length, keys: kept.includes(key) ? kept : [...kept, key] });
+    };
+    if (have && have.w >= size.w * 0.9 && have.h >= size.h * 0.9) return point(have.theme); // nothing to process
+    const still = await loadStill(src);
+    if (!still) return;
+    const sw = still.videoWidth || still.naturalWidth || still.width;
+    const sh = still.videoHeight || still.naturalHeight || still.height;
+    if (!sw || !sh) return;
+    const c = document.createElement('canvas');
+    c.width = size.w;
+    c.height = size.h;
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    const s = Math.max(size.w / sw, size.h / sh);
+    g.drawImage(still, (size.w - sw * s) / 2, (size.h - sh * s) / 2, sw * s, sh * s);
+    let blob = null;
+    try { blob = await new Promise(res => c.toBlob(res, 'image/webp', 0.9)); } catch (e) { return; } // CORS-tainted
+    if (!blob) return;
+    let theme = null;
+    try { const p = extractImagePalette(still); if (p) theme = buildImageTheme(p); } catch (e) { }
+    if (isVideoSrc(src)) { still.removeAttribute('src'); still.load(); }
+    await idbSet('wallStill:' + key, { blob, w: size.w, h: size.h, theme });
+    await point(theme);
+  }
+  // drop every prepared still (Clear all)
+  async function clearReady() {
+    const ptr = await idbGet(READY_KEY).catch(() => null);
+    for (const k of (ptr && ptr.keys) || []) await idbSet('wallStill:' + k, null).catch(() => { });
+    await idbSet(READY_KEY, null).catch(() => { });
+  }
+
   // resolves true once the image is decoded and handed to the background
   function applyWallpaper(src) {
     if (!src) { bgApi.setWallpaper(null); return Promise.resolve(false); }
+    // video wallpapers play muted & looped in the Photo background
+    if (isVideoSrc(src)) {
+      const load = cors => new Promise(resolve => {
+        const v = document.createElement('video');
+        v.muted = true; v.loop = true; v.playsInline = true;
+        // remote videos: ask for CORS first so the frame can be sampled for the
+        // Image theme / dither / halftone; retry without it if the host refuses
+        if (cors) v.crossOrigin = 'anonymous';
+        v.onloadeddata = () => {
+          bgApi.setWallpaper(v);
+          hasWallpaper = true;
+          const c = document.createElement('canvas');
+          c.width = 320;
+          c.height = Math.max(1, Math.round(320 * v.videoHeight / v.videoWidth));
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          if (loadStored('home:imgthemeKey') !== wallKey(src)) {
+            try { refreshImageTheme(c, wallKey(src)); } catch (e) { /* tainted frame: keep the current theme */ }
+          }
+          resolve(true); // playback is started/paused by the background per mode
+        };
+        v.onerror = () => {
+          v.removeAttribute('src'); v.load();
+          resolve(cors ? load(false) : false);
+        };
+        v.src = src;
+      });
+      return load(!src.startsWith('data:'));
+    }
     return new Promise(resolve => {
       const img = new Image();
       if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
       img.onload = () => {
         bgApi.setWallpaper(img);
         hasWallpaper = true;
-        refreshImageTheme(img);
+        // same picture as last time → its colors are already cached
+        if (loadStored('home:imgthemeKey') !== wallKey(src)) refreshImageTheme(img, wallKey(src));
         resolve(true);
       };
       img.onerror = () => resolve(false);
@@ -1892,6 +2116,7 @@ const bgApi = (function background() {
   // every page load shows one of them at random (never the same one twice in
   // a row when there's a choice), so a new tab feels a little different
   const WALL_MAX = 5;
+  const VIDEO_MAX_BYTES = 40 * 1048576;
   const wallStrip = document.getElementById('wall-strip');
   const wallCount = document.getElementById('wall-count');
   let walls = [];      // image sources (data: URLs or http(s) URLs)
@@ -1940,8 +2165,8 @@ const bgApi = (function background() {
   let rules = loadRules();
   function saveRules() { store('home:wallRules', JSON.stringify(rules)); }
   const toMin = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
-  function activeRule(now = new Date()) {
-    const valid = rules.filter(r => r.i < walls.length).sort((a, b) => toMin(a.t) - toMin(b.t));
+  function activeRule(now = new Date(), count = walls.length) {
+    const valid = rules.filter(r => r.i < count).sort((a, b) => toMin(a.t) - toMin(b.t));
     if (!valid.length) return null;
     const m = now.getHours() * 60 + now.getMinutes();
     let cur = valid[valid.length - 1];
@@ -1991,11 +2216,29 @@ const bgApi = (function background() {
     const shot = fade && hasWallpaper && WALL_BGS.includes(currentBg()) ? snapshotBg() : null;
     const ok = await applyWallpaper(walls[i]);
     if (shot) releaseFade(shot);
+    scheduleReady();
     return ok;
+  }
+
+  // video thumbnails are reused across re-renders (the strip is rebuilt on every
+  // wallpaper change, and re-parsing a multi-MB data: URL each time is wasteful)
+  const videoThumbs = new Map();
+  function videoThumb(src) {
+    let vid = videoThumbs.get(src);
+    if (!vid) {
+      vid = document.createElement('video');
+      vid.muted = true; vid.playsInline = true; vid.preload = 'metadata';
+      vid.src = src;
+      videoThumbs.set(src, vid);
+    }
+    return vid;
   }
 
   function renderWallStrip() {
     wallStrip.textContent = '';
+    for (const [src, vid] of videoThumbs) {
+      if (!walls.includes(src)) { vid.removeAttribute('src'); vid.load(); videoThumbs.delete(src); }
+    }
     walls.forEach((src, i) => {
       const cell = document.createElement('div');
       cell.className = 'wall-thumb' + (i === wallShown ? ' active' : '');
@@ -2004,7 +2247,11 @@ const bgApi = (function background() {
       pick.className = 'wall-thumb-pick';
       pick.title = 'Show this one now';
       pick.setAttribute('aria-label', `Show wallpaper ${i + 1}`);
-      pick.style.backgroundImage = `url("${src.replace(/"/g, '%22')}")`;
+      if (isVideoSrc(src)) {
+        pick.appendChild(videoThumb(src));
+      } else {
+        pick.style.backgroundImage = `url("${src.replace(/"/g, '%22')}")`;
+      }
       pick.addEventListener('click', () => showWall(i, true));
       const del = document.createElement('button');
       del.type = 'button';
@@ -2179,15 +2426,21 @@ const bgApi = (function background() {
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-label', `Wallpaper #${index + 1}`);
     const sw = el('i', 'pick-sw');
-    if (walls[index]) sw.style.backgroundImage = `url("${walls[index].replace(/"/g, '%22')}")`;
+    if (walls[index]) {
+      if (isVideoSrc(walls[index])) sw.textContent = '▶';
+      else sw.style.backgroundImage = `url("${walls[index].replace(/"/g, '%22')}")`;
+    }
     btn.append(sw, el('span', null, `#${index + 1}`));
     btn.addEventListener('click', () => openPop(btn, 'Pick a wallpaper', p => {
       const g = el('div', 'pop-grid walls');
       walls.forEach((src, i) => {
         const c = el('button', i === index ? 'sel' : null);
         c.setAttribute('aria-label', `Wallpaper #${i + 1}`);
-        c.style.backgroundImage = `url("${src.replace(/"/g, '%22')}")`;
-        c.appendChild(el('span', null, i + 1));
+        if (isVideoSrc(src)) c.appendChild(el('span', null, '▶ ' + (i + 1)));
+        else {
+          c.style.backgroundImage = `url("${src.replace(/"/g, '%22')}")`;
+          c.appendChild(el('span', null, i + 1));
+        }
         c.addEventListener('click', () => {
           closePop();
           if (i !== index) onChange(i);
@@ -2245,6 +2498,7 @@ const bgApi = (function background() {
     wallUrl.placeholder = 'paste image URL…';
     renderWallStrip();
     showWallpaperMode();
+    scheduleReady();
     return true;
   }
 
@@ -2259,6 +2513,7 @@ const bgApi = (function background() {
       if (i < wallShown) wallShown--;
       store('home:wallLast', String(wallShown));
       renderWallStrip();
+      scheduleReady(); // the prepared next one may have been the removed image
     }
   }
 
@@ -2269,6 +2524,7 @@ const bgApi = (function background() {
     saveRules();
     try { await idbSet('wallpapers', null); } catch (e) { }
     try { await idbSet('wallpaper', null); } catch (e) { }
+    try { await clearReady(); } catch (e) { }
     bgApi.setWallpaper(null);
     hasWallpaper = false;
     resetImageTheme();
@@ -2277,18 +2533,19 @@ const bgApi = (function background() {
 
   // re-sample the wallpaper's colors into the Image theme; a tainted
   // (cross-origin, no CORS) image keeps whatever was there before
-  function refreshImageTheme(img) {
+  function refreshImageTheme(img, key) {
     const p = extractImagePalette(img);
     if (!p) return;
     const built = buildImageTheme(p);
     setImageTheme(built);
     store('home:imgtheme', JSON.stringify(built));
+    store('home:imgthemeKey', key || '');
     if (activeTheme() === 'image') { bgApi.setTheme('image'); applyDayCycle(); }
   }
 
   function resetImageTheme() {
     THEMES.image = IMAGE_THEME_DEFAULT;
-    try { localStorage.removeItem('home:imgtheme'); } catch (e) { }
+    try { localStorage.removeItem('home:imgtheme'); localStorage.removeItem('home:imgthemeKey'); } catch (e) { }
     document.body.style.removeProperty('--img-accent');
     document.body.style.removeProperty('--img-accent-2');
     document.body.removeAttribute('data-img-mono');
@@ -2323,7 +2580,12 @@ const bgApi = (function background() {
   async function loadWallFiles(files) {
     for (const file of Array.from(files || [])) {
       if (walls.length >= WALL_MAX) break;
-      if (!file.type.startsWith('image/')) continue;
+      if (!/^(image|video)\//.test(file.type)) continue;
+      // videos are kept as data: URLs (in memory + IndexedDB), so keep them small
+      if (file.type.startsWith('video/') && file.size > VIDEO_MAX_BYTES) {
+        alert(`“${file.name}” is ${Math.round(file.size / 1048576)} MB — videos up to ${VIDEO_MAX_BYTES / 1048576} MB are supported. Trim or compress it, or paste a link to it instead.`);
+        continue;
+      }
       try { await addWallpaper(await readAsDataURL(file)); } catch (e) { }
     }
   }
@@ -2338,7 +2600,7 @@ const bgApi = (function background() {
 
   function loadWallUrl() {
     const u = wallUrl.value.trim();
-    if (!u || !/^(https?:|data:image\/)/i.test(u)) return;
+    if (!u || !/^(https?:|data:(image|video)\/)/i.test(u)) return;
     wallUrl.value = '';
     addWallpaper(u); // URLs persist too
   }
@@ -2347,8 +2609,31 @@ const bgApi = (function background() {
 
   wallClearBtn.addEventListener('click', clearWallpaper);
   wallClearModalBtn.addEventListener('click', () => { clearWallpaper(); setWallModal(false); });
-  // load the list (migrating the old single-wallpaper key) and show a random one
+  // startup: paint the prepared wallpaper first (one small read + an
+  // off-thread decode), then load the full list for the strip, rotation and
+  // rules. Without a usable prepared copy, fall back to the full load.
   (async () => {
+    let fast = null;
+    try {
+      const ptr = await idbGet(READY_KEY);
+      // a schedule rule in force for another image wins over the prepared pick
+      const rr = ptr ? activeRule(new Date(), ptr.count || 0) : null;
+      const still = ptr && Number.isInteger(ptr.i) && (!rr || rr.i === ptr.i)
+        ? await idbGet('wallStill:' + ptr.key) : null;
+      if (still && still.blob) {
+        bgApi.setWallpaper(await createImageBitmap(still.blob)); // decoded off the main thread
+        hasWallpaper = true;
+        // its colors were cached when it was prepared — no re-sampling
+        if (still.theme && loadStored('home:imgthemeKey') !== ptr.key) {
+          setImageTheme(still.theme);
+          store('home:imgtheme', JSON.stringify(still.theme));
+          store('home:imgthemeKey', ptr.key);
+          if (activeTheme() === 'image') { bgApi.setTheme('image'); applyDayCycle(); }
+        }
+        fast = ptr;
+      }
+    } catch (e) { fast = null; }
+
     try {
       let list = await idbGet('wallpapers');
       if (!Array.isArray(list)) {
@@ -2360,8 +2645,26 @@ const bgApi = (function background() {
     } catch (e) { walls = []; }
     const r = activeRule();
     ruleApplied = ruleKey(r);
+
+    // the prepared copy is still one of the wallpapers: keep it on screen
+    if (fast && walls[fast.i] && wallKey(walls[fast.i]) === fast.key && (!r || r.i === fast.i)) {
+      wallShown = fast.i;
+      wallChangedAt = Date.now();
+      store('home:wallLast', String(fast.i));
+      renderWallStrip();
+      // a video plays over its own still (same picture, so no visible swap)
+      if (isVideoSrc(walls[fast.i])) await applyWallpaper(walls[fast.i]);
+      scheduleReady(); // line up the one after
+      return;
+    }
+    // stale or missing prepared copy: the normal path, crossfading if
+    // something (a now-outdated still) is already on screen
     const i = r ? r.i : pickRandomWall();
-    if (i >= 0) showWall(i); else renderWallStrip();
+    if (i >= 0) showWall(i, !!fast);
+    else {
+      if (fast) { bgApi.setWallpaper(null); hasWallpaper = false; }
+      renderWallStrip();
+    }
   })();
 
   // halftone dot size slider
@@ -2388,7 +2691,7 @@ const bgApi = (function background() {
   const stripEl = document.getElementById('tab-strip');
   const tabsRow = document.getElementById('tabs-row');
   const tabsOpts = document.getElementById('tabs-opts');
-  const VALID_TAB_MODES = ['off', 'top', 'recent', 'bookmarks'];
+  const VALID_TAB_MODES = ['off', 'top', 'recent', 'bookmarks', 'custom'];
   const STRIP_MAX = 8;        // recent / most used are top-N lists
   const BOOKMARKS_MAX = 40;   // bookmarks show what fits, the rest → "more" chip
   const OPEN_ALL_CONFIRM = 12;
@@ -2476,8 +2779,30 @@ const bgApi = (function background() {
     return items;
   }
 
+  // "custom" mode shows the links the user manages in Settings → Links
+  function loadLinks() {
+    try {
+      const v = JSON.parse(loadStored('home:links'));
+      return Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
+    } catch (e) { return []; }
+  }
+  function saveLinks(list) { store('home:links', JSON.stringify(list.slice(0, 60))); }
+  function toStripItem(l) {
+    if (l.kind === 'folder') {
+      return { kind: 'folder', label: l.label || 'Folder', children: (l.children || []).map(toStripItem), custom: true };
+    }
+    return {
+      label: l.label || hostOf(l.url),
+      url: l.url,
+      fav: faviconFor(l.url),
+      icon: l.icon || '',
+      custom: true,
+    };
+  }
+
   async function stripItems(mode) {
     const api = tabsApi();
+    if (mode === 'custom') return loadLinks().map(toStripItem);
     if (!api) return [];
     if (mode === 'bookmarks') return bookmarkItems(api);
     if (mode === 'top') {
@@ -2505,6 +2830,7 @@ const bgApi = (function background() {
   function stripFavicon(it) {
     const holder = document.createElement('span');
     holder.className = 'tab-fav';
+    if (it.icon) { holder.textContent = it.icon; return holder; } // custom emoji/letter icon
     holder.textContent = (it.label[0] || '·').toUpperCase();
     if (it.fav && /^(https?:|chrome-extension:|data:)/.test(it.fav)) {
       const img = document.createElement('img');
@@ -2761,11 +3087,13 @@ const bgApi = (function background() {
   // rebuild only when the content actually changed — the old 5s full
   // re-render reloaded every favicon and dropped hover/focus mid-gesture
   let stripSig = '';
+  var lastStripItems = []; // for the Alt+1..9 quick-open shortcut
   async function refreshTabStrip(force) {
     if (document.body.classList.contains('no-tabs')) return;
     if (stripMenu) return; // don't yank an open menu from under the cursor
     let items = [];
     try { items = await stripItems(currentTabMode()); } catch (e) { items = []; }
+    lastStripItems = items;
     const sig = currentTabMode() + innerWidth + JSON.stringify(items, ['kind', 'label', 'url', 'fav', 'tabId', 'children']);
     if (!force && sig === stripSig) return;
     stripSig = sig;
@@ -2798,7 +3126,7 @@ const bgApi = (function background() {
 
   function applyTabStrip() {
     const mode = currentTabMode();
-    document.body.classList.toggle('no-tabs', mode === 'off' || !tabsApi());
+    document.body.classList.toggle('no-tabs', mode === 'off' || (!tabsApi() && mode !== 'custom'));
     closeStripMenu();
     refreshTabStrip(true);
   }
@@ -2884,8 +3212,9 @@ const bgApi = (function background() {
     e.stopPropagation();
     setSettings(!settingsEl.classList.contains('open'));
   });
+  // (a click on a control that re-rendered itself away isn't an outside click)
   document.addEventListener('click', e => {
-    if (!settingsEl.contains(e.target) && !settingsBtn.contains(e.target)) setSettings(false);
+    if (e.target.isConnected && !settingsEl.contains(e.target) && !settingsBtn.contains(e.target)) setSettings(false);
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && settingsEl.classList.contains('open')) setSettings(false);
@@ -3018,6 +3347,271 @@ const bgApi = (function background() {
         return () => clearInterval(timer);
       },
     },
+
+    quotes: {
+      name: 'Quote',
+      blurb: 'a quote of the day — click for another',
+      mount(body) {
+        const BUILTIN = [
+          ['The best way to predict the future is to invent it.', 'Alan Kay'],
+          ['Simplicity is the soul of efficiency.', 'Austin Freeman'],
+          ['Well begun is half done.', 'Aristotle'],
+          ['It always seems impossible until it is done.', 'Nelson Mandela'],
+          ['Do or do not — there is no try.', 'Yoda'],
+          ['Stay hungry, stay foolish.', 'Steve Jobs'],
+          ['The only way out is through.', 'Robert Frost'],
+          ['What we think, we become.', 'Buddha'],
+          ['Everything you can imagine is real.', 'Pablo Picasso'],
+          ['Make it work, make it right, make it fast.', 'Kent Beck'],
+          ['Premature optimization is the root of all evil.', 'Donald Knuth'],
+          ['Talk is cheap. Show me the code.', 'Linus Torvalds'],
+          ['The quieter you become, the more you can hear.', 'Ram Dass'],
+          ['Fall seven times, stand up eight.', 'Japanese proverb'],
+          ['A journey of a thousand miles begins with a single step.', 'Laozi'],
+          ['You miss 100% of the shots you don’t take.', 'Wayne Gretzky'],
+          ['The best time to plant a tree was 20 years ago. The second best time is now.', 'Chinese proverb'],
+          ['Small deeds done are better than great deeds intended.', 'Peter Marshall'],
+          ['Not all those who wander are lost.', 'J.R.R. Tolkien'],
+          ['In the middle of difficulty lies opportunity.', 'Albert Einstein'],
+          ['The only limit to our realization of tomorrow is our doubts of today.', 'F. D. Roosevelt'],
+          ['Happiness is not something ready-made. It comes from your own actions.', 'Dalai Lama'],
+          ['Turn your wounds into wisdom.', 'Oprah Winfrey'],
+          ['Dream big and dare to fail.', 'Norman Vaughan'],
+        ].map(([q, a]) => ({ q, a }));
+        // custom quotes: one per line, "Author, quote"
+        const custom = () => (loadStored('home:quotesCustom') || '')
+          .split('\n').map(l => l.trim()).filter(Boolean)
+          .map(l => {
+            const i = l.indexOf(',');
+            return i > 0 ? { q: l.slice(i + 1).trim(), a: l.slice(0, i).trim() } : { q: l, a: '' };
+          });
+        const all = () => [...BUILTIN, ...custom()];
+        let idx = 0;
+        const card = document.createElement('div');
+        card.className = 'wg-quote';
+        card.title = 'Click for another quote';
+        const q = document.createElement('div');
+        q.className = 'wg-quote-text';
+        const a = document.createElement('div');
+        a.className = 'wg-quote-author';
+        const hint = document.createElement('div');
+        hint.className = 'wg-vibes-hint';
+        hint.textContent = 'click for another';
+        card.append(q, a, hint);
+        body.appendChild(card);
+        function show() {
+          const list = all();
+          if (!list.length) { q.textContent = 'Add your own quotes in Settings → Widgets'; a.textContent = ''; return; }
+          idx = ((idx % list.length) + list.length) % list.length;
+          q.textContent = '“' + list[idx].q + '”';
+          a.textContent = list[idx].a ? '— ' + list[idx].a : '';
+        }
+        function next() {
+          const list = all();
+          if (list.length < 2) return show();
+          let n = idx;
+          while (n === idx) n = Math.floor(Math.random() * list.length);
+          idx = n;
+          show();
+        }
+        // quote of the day on load
+        const d = new Date();
+        const day = Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5);
+        idx = ((day % all().length) + all().length) % all().length;
+        card.addEventListener('click', next);
+        const onNext = () => next();
+        document.addEventListener('home:next-quote', onNext);
+        show();
+        return () => document.removeEventListener('home:next-quote', onNext);
+      },
+    },
+
+    notes: {
+      name: 'Notes',
+      blurb: 'markdown-ish notes & to-dos',
+      mount(body) {
+        const KEY = 'home:notes';
+        const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const view = document.createElement('div');
+        view.className = 'wg-notes-view';
+        view.title = 'Click to edit';
+        const ta = document.createElement('textarea');
+        ta.className = 'wg-notes-edit';
+        ta.spellcheck = false;
+        ta.placeholder = '# heading\n- bullet\n- [ ] todo';
+        ta.hidden = true;
+        body.appendChild(view);
+        body.appendChild(ta);
+        function render() {
+          const src = loadStored(KEY) || '';
+          const todos = [];
+          const html = src.split('\n').map((line, li) => {
+            let m;
+            if ((m = line.match(/^###\s+(.*)/))) return `<h4>${esc(m[1])}</h4>`;
+            if ((m = line.match(/^##\s+(.*)/))) return `<h3>${esc(m[1])}</h3>`;
+            if ((m = line.match(/^#\s+(.*)/))) return `<h2>${esc(m[1])}</h2>`;
+            if ((m = line.match(/^-\s+\[x\]\s+(.*)/i))) { todos.push(li); return `<label class="wg-todo done"><input type="checkbox" checked> ${esc(m[1])}</label>`; }
+            if ((m = line.match(/^-\s+\[ \]\s+(.*)/))) { todos.push(li); return `<label class="wg-todo"><input type="checkbox"> ${esc(m[1])}</label>`; }
+            if ((m = line.match(/^-\s+(.*)/))) return `<div class="wg-li">•&nbsp;${esc(m[1])}</div>`;
+            if (!line.trim()) return '<div class="wg-gap"></div>';
+            return `<p>${esc(line)}</p>`;
+          }).join('');
+          view.innerHTML = html || '<span class="wg-notes-empty">click to write…</span>';
+          view.querySelectorAll('.wg-todo input').forEach((cb, k) => {
+            cb.addEventListener('change', () => {
+              const lines = (loadStored(KEY) || '').split('\n');
+              const li = todos[k];
+              if (li == null || !lines[li]) return;
+              lines[li] = lines[li].replace(/^-\s+\[[ xX]\]/, cb.checked ? '- [x]' : '- [ ]');
+              store(KEY, lines.join('\n'));
+              render();
+            });
+          });
+        }
+        function edit() {
+          ta.value = loadStored(KEY) || '';
+          view.hidden = true;
+          ta.hidden = false;
+          ta.focus();
+        }
+        function done() {
+          store(KEY, ta.value);
+          ta.hidden = true;
+          view.hidden = false;
+          render();
+        }
+        // ticking a to-do must not bubble up and open the editor (which would
+        // load the pre-tick text and save it back over the tick on blur)
+        view.addEventListener('click', e => { if (!e.target.closest('.wg-todo')) edit(); });
+        ta.addEventListener('blur', done);
+        ta.addEventListener('keydown', e => {
+          // Ctrl/Cmd+Shift+1..5 prefix the current line, like Bonjourr's notes
+          if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+            // e.code, not e.key: with Shift held the key is '!', '@', … not a digit
+            const prefixes = { Digit1: '# ', Digit2: '## ', Digit3: '### ', Digit4: '- ', Digit5: '- [ ] ',
+              Numpad1: '# ', Numpad2: '## ', Numpad3: '### ', Numpad4: '- ', Numpad5: '- [ ] ' };
+            const p = prefixes[e.code];
+            if (p) {
+              e.preventDefault();
+              const s = ta.selectionStart;
+              const lineStart = ta.value.lastIndexOf('\n', s - 1) + 1;
+              ta.value = ta.value.slice(0, lineStart) + p + ta.value.slice(lineStart);
+              ta.selectionStart = ta.selectionEnd = lineStart + p.length;
+            }
+          }
+          if (e.key === 'Escape') done();
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') done();
+        });
+        render();
+      },
+    },
+
+    pomo: {
+      name: 'Pomodoro',
+      blurb: 'focus timer — countdown also in the tab title',
+      mount(body) {
+        const KEY = 'home:pomo';
+        const load = () => { try { return JSON.parse(loadStored(KEY)); } catch (e) { return null; } };
+        const save = s => store(KEY, JSON.stringify(s));
+        const cfg = () => loadPomoCfg();
+        const fresh = () => ({ mode: 'work', running: false, endsAt: 0, left: cfg().work * 60000, focus: false, done: 0 });
+        // localStorage is the single source of truth, so several open new tabs
+        // share one timer instead of each running (and ringing) their own
+        const sync = () => { const v = load(); st = v && typeof v === 'object' ? v : fresh(); };
+        let st = null;
+        sync();
+        // a session that ended while no tab was open just advances silently
+        // (render isn't touched here — the card elements don't exist yet)
+        if (st.running && st.endsAt <= Date.now()) advance(true);
+        function advance(silent) {
+          sync();
+          // another tab may have advanced it already — then just follow along
+          if (silent !== 'skip' && !(st.running && st.endsAt <= Date.now())) return false;
+          if (st.mode === 'work') { st.done = (st.done || 0) + 1; st.mode = st.done % 4 === 0 ? 'long' : 'short'; }
+          else st.mode = 'work';
+          st.left = cfg()[st.mode] * 60000;
+          st.endsAt = Date.now() + st.left;
+          st.running = true;
+          save(st);
+          if (silent !== true) ring();
+          return true;
+        }
+        function ring() {
+          try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            ring.ac = ring.ac || new AC();
+            const ac = ring.ac;
+            for (let i = 0; i < 3; i++) {
+              const o = ac.createOscillator(), g = ac.createGain();
+              o.type = 'square';
+              o.frequency.value = i % 2 ? 660 : 880;
+              o.connect(g); g.connect(ac.destination);
+              const t0 = ac.currentTime + i * 0.3;
+              g.gain.setValueAtTime(0.0001, t0);
+              g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+              g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+              o.start(t0); o.stop(t0 + 0.28);
+            }
+          } catch (e) { }
+        }
+        const card = document.createElement('div');
+        card.className = 'wg-pomo';
+        const time = document.createElement('div');
+        time.className = 'wg-pomo-time';
+        const mode = document.createElement('div');
+        mode.className = 'wg-pomo-mode';
+        const btns = document.createElement('div');
+        btns.className = 'wg-pomo-btns';
+        const start = document.createElement('button');
+        start.type = 'button'; start.className = 'wall-btn';
+        const skip = document.createElement('button');
+        skip.type = 'button'; skip.className = 'wall-btn'; skip.textContent = 'skip';
+        const focus = document.createElement('button');
+        focus.type = 'button'; focus.className = 'wall-btn';
+        const doneEl = document.createElement('div');
+        doneEl.className = 'wg-pomo-done';
+        btns.append(start, skip, focus);
+        card.append(time, mode, btns, doneEl);
+        body.appendChild(card);
+        const fmt = ms => {
+          const s = Math.max(0, Math.ceil(ms / 1000));
+          return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        };
+        function render() {
+          const ms = st.running ? st.endsAt - Date.now() : (st.left || cfg()[st.mode] * 60000);
+          time.textContent = fmt(ms);
+          mode.textContent = st.mode + (st.running ? '' : ' · paused');
+          start.textContent = st.running ? 'pause' : 'start';
+          focus.textContent = st.focus ? 'focus on' : 'focus off';
+          focus.classList.toggle('active', !!st.focus);
+          doneEl.textContent = st.done ? `${st.done} pomodoro${st.done === 1 ? '' : 's'} done` : '';
+          document.body.classList.toggle('pomo-focus', !!st.focus && st.running);
+          renderTabTitle();
+        }
+        start.addEventListener('click', () => {
+          sync();
+          if (st.running) { st.left = Math.max(0, st.endsAt - Date.now()); st.running = false; st.endsAt = 0; }
+          else { st.endsAt = Date.now() + (st.left || cfg()[st.mode] * 60000); st.running = true; }
+          save(st); render();
+        });
+        skip.addEventListener('click', () => { advance('skip'); render(); });
+        focus.addEventListener('click', () => { sync(); st.focus = !st.focus; save(st); render(); });
+        const timer = setInterval(() => {
+          sync();
+          // whichever tab notices first advances (and rings); advance() re-reads
+          // storage, so the others then see the new session and stay quiet
+          if (st.running && st.endsAt <= Date.now()) advance(false);
+          render();
+        }, 500);
+        render();
+        return () => {
+          clearInterval(timer);
+          document.body.classList.remove('pomo-focus');
+          renderTabTitle();
+        };
+      },
+    },
   };
 
   const modTab = document.getElementById('mod-tab');
@@ -3058,7 +3652,15 @@ const bgApi = (function background() {
     rm.textContent = '×';
     rm.title = 'Remove widget';
     rm.addEventListener('click', () => removeWidget(id, type));
+    const pin = document.createElement('button');
+    pin.className = 'mod-pin';
+    pin.type = 'button';
+    pin.title = 'Pin to the page';
+    pin.setAttribute('aria-label', 'Pin widget to the page');
+    pin.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3h6l-1 6 4 4H6l4-4-1-6zM12 13v8" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+    pin.addEventListener('click', e => { e.stopPropagation(); togglePin(type); });
     head.appendChild(name);
+    head.appendChild(pin);
     head.appendChild(rm);
     card.appendChild(head);
     card.dataset.type = type;
@@ -3070,6 +3672,11 @@ const bgApi = (function background() {
 
     widgetCleanups.set(id, def.mount ? def.mount(body) : null);
 
+    // free placement: a saved spot pins the card onto the page instead of the panel
+    const savedPos = posToPx(loadWidgetPos()[type]);
+    if (savedPos) pinCard(card, savedPos.x, savedPos.y);
+    bindCardDrag(card, type);
+
     if (!restore) {
       const list = loadWidgets();
       list.push(type);
@@ -3077,10 +3684,11 @@ const bgApi = (function background() {
       renderAddMenu();
       renderEmptyHint();
     }
+    renderWidgetList();
   }
 
   function removeWidget(id, type) {
-    const card = modBody.querySelector(`.mod-card[data-idx="${id}"]`);
+    const card = document.querySelector(`.mod-card[data-idx="${id}"]`);
     if (card) card.remove();
     widgetCleanups.get(id)?.();
     widgetCleanups.delete(id);
@@ -3088,8 +3696,12 @@ const bgApi = (function background() {
     const pos = list.indexOf(type);
     if (pos !== -1) list.splice(pos, 1);
     saveWidgets(list);
+    const pp = loadWidgetPos();
+    delete pp[type];
+    saveWidgetPos(pp);
     renderAddMenu();
     renderEmptyHint();
+    renderWidgetList();
   }
 
   function renderEmptyHint() {
@@ -3132,6 +3744,13 @@ const bgApi = (function background() {
     e.stopPropagation();
     renderAddMenu();
     modAddMenu.classList.toggle('open');
+    // the panel sits near the bottom of the screen: cap the list to the room
+    // left below its top edge so it scrolls instead of running off-screen
+    if (modAddMenu.classList.contains('open')) {
+      modAddMenu.style.maxHeight = '';
+      const top = modAddMenu.getBoundingClientRect().top;
+      modAddMenu.style.maxHeight = Math.max(140, innerHeight - top - 14) + 'px';
+    }
   });
   document.addEventListener('click', e => {
     if (!modAddMenu.contains(e.target) && e.target !== modAdd) modAddMenu.classList.remove('open');
@@ -3157,12 +3776,13 @@ const bgApi = (function background() {
     register(id, def) {
       if (!id || !def || typeof def.mount !== 'function' || WIDGETS[id]) return;
       WIDGETS[id] = { name: def.name || id, blurb: def.blurb || '', mount: def.mount };
-      const mounted = [...modBody.querySelectorAll('.mod-card')].map(c => c.dataset.type);
+      const mounted = [...document.querySelectorAll('.mod-card')].map(c => c.dataset.type);
       loadWidgets().forEach(t => {
         if (t === id && !mounted.includes(id)) addWidget(id, true);
       });
       renderAddMenu();
       renderEmptyHint();
+      renderWidgetList();
     },
   };
   const modsScript = document.createElement('script');
@@ -3292,16 +3912,21 @@ const bgApi = (function background() {
   /* ---------- provider dropdown + engine row ---------- */
 
   const engineOpts = document.getElementById('engine-opts');
-  for (const p of PROVIDERS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.dataset.engine = p.id;
-    b.textContent = p.name;
-    engineOpts.appendChild(b);
+  function renderEngineOpts() {
+    engineOpts.innerHTML = '';
+    for (const p of allProviders()) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.engine = p.id;
+      b.textContent = p.name;
+      engineOpts.appendChild(b);
+    }
+    renderProvider();
   }
+  renderEngineOpts();
   engineOpts.addEventListener('click', e => {
     const b = e.target.closest('button[data-engine]');
-    if (b) setProvider(PROVIDERS.find(p => p.id === b.dataset.engine), false);
+    if (b) setProvider(allProviders().find(p => p.id === b.dataset.engine), false);
   });
 
   function renderProvider() {
@@ -3329,14 +3954,20 @@ const bgApi = (function background() {
   }
 
   const CHECK = '<svg class="check" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5 9-10" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  for (const p of PROVIDERS) {
-    const li = document.createElement('li');
-    li.dataset.id = p.id;
-    li.setAttribute('role', 'option');
-    li.innerHTML = `<span class="provider-ico">${p.letter}</span><span>${p.name}</span><span class="menu-bang">!${PROVIDER_BANG[p.id] || ''}</span>${CHECK}`;
-    li.addEventListener('click', () => setProvider(p));
-    menu.appendChild(li);
+  function renderProviderMenu() {
+    menu.innerHTML = '';
+    for (const p of allProviders()) {
+      const li = document.createElement('li');
+      li.dataset.id = p.id;
+      li.setAttribute('role', 'option');
+      // the custom engine's name is user text: escape it before it hits innerHTML
+      const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      li.innerHTML = `<span class="provider-ico">${esc(p.letter)}</span><span>${esc(p.name)}</span><span class="menu-bang">${PROVIDER_BANG[p.id] ? '!' + PROVIDER_BANG[p.id] : ''}</span>${CHECK}`;
+      li.addEventListener('click', () => setProvider(p));
+      menu.appendChild(li);
+    }
   }
+  renderProviderMenu();
 
   let menuIdx = -1;
   function renderMenuActive() {
@@ -3345,7 +3976,8 @@ const bgApi = (function background() {
   function open() {
     wrap.classList.add('open');
     btn.setAttribute('aria-expanded', 'true');
-    menuIdx = PROVIDERS.indexOf(provider);
+    // by id: the custom provider is rebuilt from storage, so it's never === provider
+    menuIdx = allProviders().findIndex(p => p.id === provider.id);
     renderMenuActive();
   }
   function close() { wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
@@ -3356,12 +3988,13 @@ const bgApi = (function background() {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!isOpen()) { open(); return; }
-      const n = PROVIDERS.length;
+      const n = allProviders().length;
       menuIdx = (menuIdx + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
       renderMenuActive();
     } else if ((e.key === 'Enter' || e.key === ' ') && isOpen() && menuIdx >= 0) {
       e.preventDefault();
-      setProvider(PROVIDERS[menuIdx]);
+      const p = allProviders()[menuIdx];
+      if (p) setProvider(p);
     } else if (e.key === 'Escape' && isOpen()) {
       e.preventDefault();
       close();
@@ -3400,14 +4033,14 @@ const bgApi = (function background() {
     const bang = parseBang(q);
     if (bang) return navigate(bangUrl(bang.b, bang.q), mode);
     if (looksLikeUrl(q)) return navigate(normalizeUrl(q), mode);
-    navigate(provider.url + encodeURIComponent(q), mode);
+    navigate(engineUrl(q), mode);
   }
 
   // a picked suggestion always searches (even if it looks like a domain),
   // through the bang that was active when it was offered
   function searchTerm(s, bang, mode) {
     remember(bang ? `!${bang.key} ${s}` : s);
-    navigate(bang ? bangUrl(bang, s) : provider.url + encodeURIComponent(s), mode);
+    navigate(bang ? bangUrl(bang, s) : engineUrl(s), mode);
   }
 
   function submit(mode) {
@@ -4027,9 +4660,9 @@ const bgApi = (function background() {
     // Alt+↑/↓ cycles the default engine without leaving the box
     if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault();
-      const n = PROVIDERS.length;
-      const i = PROVIDERS.indexOf(provider);
-      setProvider(PROVIDERS[(i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n]);
+      const list = allProviders();
+      const i = Math.max(0, list.findIndex(p => p.id === provider.id));
+      setProvider(list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]);
       return;
     }
     if (!suggestOpenState() && e.key === 'ArrowDown') {
@@ -4088,29 +4721,158 @@ const bgApi = (function background() {
 
   input.focus({ preventScroll: true });
 
-  // clock pill
+  /* ---------- clock: small (in the info bar) or big (above the search) ---------- */
+
+  // settings: home:clockSize small|big · home:clockFace digital|analog (big only)
+  // · home:clock 24|12 · home:clockSec 1 · home:tz an IANA zone ('' = this computer's)
   const clock = document.getElementById('clock');
   const date = document.getElementById('date');
   const clockOpts = document.getElementById('clock-opts');
-  const clockFmt = () => { const v = loadStored('home:clock'); return v === '12' || v === 'sec' ? v : '24'; };
+  const bigClock = document.getElementById('big-clock');
+  const bigDigits = document.getElementById('big-digits');
+  const analogCv = document.getElementById('analog-clock');
+  const clockCfg = () => {
+    const legacy = loadStored('home:clock'); // older builds: 24 | 12 | sec | analog
+    const size = loadStored('home:clockSize') || (legacy === 'analog' ? 'big' : 'small');
+    return {
+      size: size === 'big' ? 'big' : 'small',
+      face: (loadStored('home:clockFace') || (legacy === 'analog' ? 'analog' : 'digital')) === 'analog' ? 'analog' : 'digital',
+      h12: legacy === '12',
+      sec: loadStored('home:clockSec') === '1' || legacy === 'sec',
+      tz: validZone(loadStored('home:tz') || ''),
+    };
+  };
+  function validZone(z) {
+    if (!z) return '';
+    try { new Intl.DateTimeFormat([], { timeZone: z }); return z; } catch (e) { return ''; }
+  }
+  // h/m/s as seen in the chosen zone (for the analog hands)
+  function zoneParts(now, tz) {
+    if (!tz) return { h: now.getHours(), m: now.getMinutes(), s: now.getSeconds() };
+    const p = {};
+    for (const x of new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' }).formatToParts(now)) p[x.type] = +x.value;
+    return { h: p.hour % 24, m: p.minute, s: p.second };
+  }
+  const zoneLabel = tz => tz ? tz.split('/').pop().replace(/_/g, ' ') : '';
   function tick() {
     const now = new Date();
-    const fmt = clockFmt();
-    clock.textContent = fmt === '12'
-      ? now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
-      : now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false, ...(fmt === 'sec' ? { second: '2-digit' } : {}) });
-    date.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const c = clockCfg();
+    const show = loadShow();
+    const big = c.size === 'big' && show.clock;
+    const tzOpt = c.tz ? { timeZone: c.tz } : {};
+    const opts = c.h12
+      ? { hour: 'numeric', minute: '2-digit', hour12: true, ...tzOpt }
+      : { hour: '2-digit', minute: '2-digit', hour12: false, ...tzOpt };
+    document.body.classList.toggle('clock-big', c.size === 'big');
+    bigClock.hidden = !big;
+    if (big) {
+      const analog = c.face === 'analog';
+      analogCv.hidden = !analog;
+      bigDigits.hidden = analog;
+      if (analog) drawAnalogClock(zoneParts(now, c.tz), c.sec);
+      else {
+        // big digits: hh:mm, with seconds / am-pm as small trailing marks
+        const parts = new Intl.DateTimeFormat([], { ...opts, ...(c.sec ? { second: '2-digit' } : {}) }).formatToParts(now);
+        let main = '', sec = '', ampm = '';
+        let seenMin = false;
+        for (const p of parts) {
+          if (p.type === 'dayPeriod') ampm = p.value;
+          else if (p.type === 'second') sec = p.value;
+          else if (p.type === 'minute') { main += p.value; seenMin = true; }
+          else if (!seenMin) main += p.value;
+        }
+        bigDigits.innerHTML = '';
+        bigDigits.append(main.trim());
+        if (sec) { const s = document.createElement('span'); s.className = 'sec'; s.textContent = sec; bigDigits.append(s); }
+        if (ampm) { const s = document.createElement('span'); s.className = 'ampm'; s.textContent = ampm; bigDigits.append(s); }
+      }
+      bigClock.title = c.tz ? `Time in ${zoneLabel(c.tz)}` : '';
+    } else {
+      clock.textContent = now.toLocaleTimeString([], { ...opts, ...(c.sec ? { second: '2-digit' } : {}) })
+        + (c.tz ? ' ' + zoneLabel(c.tz) : '');
+    }
+    date.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', ...tzOpt });
+    renderTabTitle();
   }
   function renderClockOpts() {
-    for (const b of clockOpts.children) b.classList.toggle('active', b.dataset.clock === clockFmt());
+    const c = clockCfg();
+    for (const b of clockOpts.children) b.classList.toggle('active', (b.dataset.clock === '12') === c.h12);
+    for (const b of document.getElementById('clock-size-opts').children) b.classList.toggle('active', b.dataset.csize === c.size);
+    for (const b of document.getElementById('clock-face-opts').children) b.classList.toggle('active', b.dataset.cface === c.face);
+    // the analog face only exists as the big clock; a 12/24h format means nothing on it
+    document.getElementById('clock-face-row').hidden = c.size !== 'big';
+    document.getElementById('clock-fmt-row').querySelector('.phase-opts').hidden = c.size === 'big' && c.face === 'analog';
+    document.getElementById('clock-sec').checked = c.sec;
+    const tzOn = document.getElementById('tz-on');
+    tzOn.checked = !!c.tz || tzOn.dataset.pending === '1';
+    document.getElementById('tz-row').hidden = !tzOn.checked;
+  }
+  // a click sets one knob; the legacy combined key is normalized to 24|12
+  function setClock(key, val) {
+    const c = clockCfg();
+    store('home:clockSize', c.size);
+    store('home:clockFace', c.face);
+    store('home:clockSec', c.sec ? '1' : '0');
+    store('home:clock', c.h12 ? '12' : '24');
+    store(key, val);
+    renderClockOpts();
+    tick();
   }
   clockOpts.addEventListener('click', e => {
     const b = e.target.closest('button[data-clock]');
-    if (!b) return;
-    store('home:clock', b.dataset.clock);
-    renderClockOpts();
-    tick();
+    if (b) setClock('home:clock', b.dataset.clock);
   });
+  document.getElementById('clock-size-opts').addEventListener('click', e => {
+    const b = e.target.closest('button[data-csize]');
+    if (!b) return;
+    setClock('home:clockSize', b.dataset.csize);
+    // picking a clock is a clear wish to see it
+    const show = loadShow();
+    if (!show.clock) { show.clock = true; store('home:show', JSON.stringify(show)); applyShow(show); renderShowOpts(); }
+  });
+  document.getElementById('clock-face-opts').addEventListener('click', e => {
+    const b = e.target.closest('button[data-cface]');
+    if (b) setClock('home:clockFace', b.dataset.cface);
+  });
+  document.getElementById('clock-sec').addEventListener('change', e => setClock('home:clockSec', e.target.checked ? '1' : '0'));
+  (function wireZone() {
+    const on = document.getElementById('tz-on');
+    const sel = document.getElementById('tz-select');
+    let zones = [];
+    try { zones = Intl.supportedValuesOf('timeZone'); } catch (e) { }
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (!zones.length) zones = [here, 'UTC', 'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles', 'Asia/Tokyo'].filter(Boolean);
+    const now = new Date();
+    const offset = z => {
+      try {
+        return new Intl.DateTimeFormat('en-US', { timeZone: z, timeZoneName: 'shortOffset' })
+          .formatToParts(now).find(p => p.type === 'timeZoneName').value.replace('GMT', 'UTC');
+      } catch (e) { return ''; }
+    };
+    // grouped by region, each labeled "City (UTC+9)"
+    const groups = {};
+    for (const z of zones) (groups[z.includes('/') ? z.split('/')[0] : 'Other'] ||= []).push(z);
+    for (const [g, list] of Object.entries(groups)) {
+      const og = document.createElement('optgroup');
+      og.label = g;
+      for (const z of list) {
+        const o = document.createElement('option');
+        o.value = z;
+        o.textContent = `${z.split('/').slice(1).join(' / ').replace(/_/g, ' ') || z} (${offset(z)})`;
+        og.appendChild(o);
+      }
+      sel.appendChild(og);
+    }
+    sel.value = validZone(loadStored('home:tz') || '') || here;
+    on.addEventListener('change', () => {
+      if (on.checked) { on.dataset.pending = '1'; store('home:tz', sel.value); }
+      else { on.dataset.pending = ''; store('home:tz', ''); }
+      renderClockOpts();
+      tick();
+    });
+    sel.addEventListener('change', () => { store('home:tz', sel.value); tick(); });
+  })();
+  var clockReady = true; // eslint-disable-line no-var — read by applyShow before this block runs
   renderClockOpts();
   tick();
   setInterval(tick, 1000);
@@ -4359,7 +5121,7 @@ const bgApi = (function background() {
     wxSeg.innerHTML =
       `<svg width="11" height="11" viewBox="0 0 11 11" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>` +
       temp;
-    wxSeg.title = title;
+    wxSeg.title = title + ' · click for details';
     wxSeg.hidden = false;
     wxDot.hidden = false;
   }
@@ -4438,20 +5200,37 @@ const bgApi = (function background() {
     const timer = setTimeout(() => ctrl.abort(), 5000);
     try {
       const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + loc.lat + '&longitude=' + loc.lon +
-        '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,is_day&timezone=auto';
+        '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day' +
+        '&hourly=temperature_2m,weather_code&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=auto';
       const res = await fetch(url, { signal: ctrl.signal });
       if (!res.ok) return null;
       const j = await res.json();
       const cur = j && j.current;
       if (!cur || !isFinite(cur.temperature_2m)) return null;
       const prev = wxCache();
+      // next hours for the details popover
+      const hourly = (j.hourly && j.hourly.time && j.hourly.temperature_2m)
+        ? j.hourly.time.map((t, i) => ({ t, tempC: j.hourly.temperature_2m[i], code: j.hourly.weather_code[i] }))
+        : [];
+      // hourly times are in the location's local time (timezone=auto), so compare
+      // against the API's own local "now", not the browser's UTC ISO string;
+      // two forecast days keep the list full late in the evening
+      const nowHour = String(cur.time || '').slice(0, 13) || new Date().toISOString().slice(0, 13);
+      const nextHours = hourly.filter(h => h.t >= nowHour).slice(0, 6);
+      const daily = j.daily || {};
       return {
         ts: Date.now(),
         tempC: cur.temperature_2m,
         feelsC: isFinite(cur.apparent_temperature) ? cur.apparent_temperature : cur.temperature_2m,
+        humidity: isFinite(cur.relative_humidity_2m) ? cur.relative_humidity_2m : null,
         wind: isFinite(cur.wind_speed_10m) ? cur.wind_speed_10m : 0,
         code: cur.weather_code || 0,
         isDay: !!cur.is_day,
+        nextHours,
+        sunrise: (daily.sunrise && daily.sunrise[0]) || null,
+        sunset: (daily.sunset && daily.sunset[0]) || null,
+        tMax: (daily.temperature_2m_max && daily.temperature_2m_max[0]) ?? null,
+        tMin: (daily.temperature_2m_min && daily.temperature_2m_min[0]) ?? null,
         lat: loc.lat,
         lon: loc.lon,
         auto: !loc.manual,
@@ -4616,4 +5395,1080 @@ const bgApi = (function background() {
   });
 
   wxRenderOpts();
+
+  /* =====================================================================
+     Bonjourr-inspired additions, part of the ui() closure: greeting by
+     name, quotes/notes/pomodoro widgets, free widget placement, custom
+     quick links, page context menu, help overlay, analog + world clocks,
+     tab title / emoji favicon, custom font / CSS / search engine,
+     settings export-import + presets, weather details, solid / blur.
+     ===================================================================== */
+
+  const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /* ---------- greeting (phase word + your name) ---------- */
+
+  // no outer consts here: applyDayCycle calls this before the appended
+  // section has run, so everything it needs lives inside the function
+  function renderGreeting() {
+    const el = document.getElementById('greeting');
+    if (!el) return;
+    const words = { morning: 'Good morning', day: 'Good afternoon', evening: 'Good evening', night: 'Good night' };
+    const name = (loadStored('home:greet') || '').trim();
+    const phase = DayCycle.current(new Date(), forcedPhase()).name;
+    const word = words[phase] || 'Hello';
+    el.textContent = name ? `${word}, ${name}` : word;
+    el.hidden = !loadShow().greeting; // Layout → Show → Greeting
+  }
+  (function wireGreet() {
+    const inp = document.getElementById('set-greet');
+    inp.value = loadStored('home:greet') || '';
+    inp.addEventListener('input', () => {
+      store('home:greet', inp.value.trim());
+      // typing a name is a clear wish to see the greeting
+      const show = loadShow();
+      if (inp.value.trim() && !show.greeting) {
+        show.greeting = true;
+        store('home:show', JSON.stringify(show));
+        applyShow(show);
+        renderShowOpts();
+      }
+      renderGreeting();
+    });
+  })();
+
+  /* ---------- page font ---------- */
+
+  // stored as a family name ('' = the default Inter + Silkscreen pair). Named
+  // fonts come from Google Fonts (same host the page already loads Inter from);
+  // anything else is treated as an installed font, with a Google fallback try.
+  const FONT_GROUPS = {
+    'Pixel': ['Silkscreen', 'Pixelify Sans', 'Press Start 2P', 'VT323', 'Tiny5', 'Jersey 10'],
+    'Sans': ['Inter', 'Space Grotesk', 'Outfit', 'Nunito', 'Rubik', 'Manrope'],
+    'Mono': ['JetBrains Mono', 'IBM Plex Mono', 'Space Mono', 'Fira Code'],
+    'Serif': ['Lora', 'Fraunces', 'Playfair Display', 'Merriweather'],
+    'Handwritten': ['Caveat', 'Patrick Hand'],
+  };
+  const LEGACY_FONTS = { pixel: 'Silkscreen', mono: 'JetBrains Mono', serif: 'Lora', system: 'system-ui' };
+  const SYSTEM_FONTS = ['system-ui'];
+  const isListedFont = f => SYSTEM_FONTS.includes(f) || Object.values(FONT_GROUPS).some(g => g.includes(f));
+  function currentFont() {
+    const f = (loadStored('home:font') || '').trim();
+    return LEGACY_FONTS[f] || f;
+  }
+  function loadGoogleFont(family) {
+    if (!family || SYSTEM_FONTS.includes(family) || family === 'Inter' || family === 'Silkscreen') return;
+    const id = 'gf-' + family.replace(/\W+/g, '-').toLowerCase();
+    if (document.getElementById(id)) return;
+    const l = document.createElement('link');
+    l.id = id;
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(family).replace(/%20/g, '+') +
+      ':wght@400;500;600&display=swap';
+    // fonts that only ship one weight reject the weight axis — retry plain
+    l.onerror = () => { l.onerror = null; l.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(family).replace(/%20/g, '+') + '&display=swap'; };
+    document.head.appendChild(l);
+  }
+  function applyFont() {
+    const f = currentFont();
+    const root = document.documentElement.style;
+    if (!f) {
+      root.removeProperty('--font-text');
+      root.removeProperty('--font-pixel');
+    } else {
+      loadGoogleFont(f);
+      const stack = f === 'system-ui'
+        ? 'system-ui, -apple-system, "Segoe UI", sans-serif'
+        : `"${f.replace(/["\\]/g, '')}", system-ui, sans-serif`;
+      root.setProperty('--font-text', stack);
+      // small labels follow too, unless asked to keep the pixel look
+      if (loadStored('home:fontPixel') === '1') root.removeProperty('--font-pixel');
+      else root.setProperty('--font-pixel', stack);
+    }
+    const sel = document.getElementById('set-font');
+    const custom = document.getElementById('set-font-custom');
+    const isCustom = !!f && !isListedFont(f);
+    sel.value = isCustom || sel.dataset.custom === '1' ? '__custom' : f;
+    document.getElementById('font-custom-row').hidden = sel.value !== '__custom';
+    if (isCustom && document.activeElement !== custom) custom.value = f;
+    document.getElementById('set-font-pixel').checked = loadStored('home:fontPixel') === '1';
+    document.getElementById('set-font-pixel').disabled = !f;
+  }
+  (function wireFont() {
+    const sel = document.getElementById('set-font');
+    const add = (parent, value, label) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      parent.appendChild(o);
+    };
+    add(sel, '', 'Default — Inter + pixel labels');
+    add(sel, 'system-ui', 'System font');
+    for (const [g, list] of Object.entries(FONT_GROUPS)) {
+      const og = document.createElement('optgroup');
+      og.label = g;
+      for (const f of list) add(og, f, f);
+      sel.appendChild(og);
+    }
+    add(sel, '__custom', 'Custom / installed font…');
+    const custom = document.getElementById('set-font-custom');
+    sel.addEventListener('change', () => {
+      if (sel.value === '__custom') {
+        sel.dataset.custom = '1';
+        document.getElementById('font-custom-row').hidden = false;
+        custom.focus();
+        return;
+      }
+      sel.dataset.custom = '';
+      store('home:font', sel.value);
+      applyFont();
+    });
+    let deb = 0;
+    custom.addEventListener('input', () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => { store('home:font', custom.value.trim()); applyFont(); }, 400);
+    });
+    document.getElementById('set-font-pixel').addEventListener('change', e => {
+      store('home:fontPixel', e.target.checked ? '1' : '0');
+      applyFont();
+    });
+    // Chrome's Local Font Access: list what's installed (asks permission once)
+    const localBtn = document.getElementById('font-local');
+    if ('queryLocalFonts' in window) {
+      localBtn.hidden = false;
+      localBtn.addEventListener('click', async () => {
+        try {
+          const fonts = await window.queryLocalFonts();
+          const list = document.getElementById('font-list');
+          list.innerHTML = '';
+          for (const fam of [...new Set(fonts.map(f => f.family))].sort()) {
+            const o = document.createElement('option');
+            o.value = fam;
+            list.appendChild(o);
+          }
+          localBtn.textContent = `${list.children.length} fonts`;
+          custom.focus();
+          custom.showPicker?.();
+        } catch (e) { localBtn.textContent = 'Not allowed'; }
+      });
+    }
+  })();
+
+  function applyUserCss() {
+    let st = document.getElementById('user-css');
+    if (!st) { st = document.createElement('style'); st.id = 'user-css'; document.head.appendChild(st); }
+    st.textContent = loadStored('home:css') || '';
+  }
+  (function wireCss() {
+    const ta = document.getElementById('set-css');
+    ta.value = loadStored('home:css') || '';
+    let deb = 0;
+    ta.addEventListener('input', () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => { store('home:css', ta.value); applyUserCss(); }, 300);
+    });
+  })();
+
+  /* ---------- tab title + emoji favicon ---------- */
+
+  function loadPomoState() {
+    try { const v = JSON.parse(loadStored('home:pomo')); return v && typeof v === 'object' ? v : null; } catch (e) { return null; }
+  }
+  function loadPomoCfg() {
+    try { return { work: 25, short: 5, long: 15, ...((JSON.parse(loadStored('home:pomoCfg'))) || {}) }; }
+    catch (e) { return { work: 25, short: 5, long: 15 }; }
+  }
+  function renderTabTitle() {
+    const pomo = loadPomoState();
+    const tpl = (loadStored('home:tabTitle') || '').trim();
+    const hhmm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    let t = tpl ? tpl.split('{time}').join(hhmm) : (window.__origTitle || document.title);
+    if (pomo && pomo.running && pomo.endsAt > Date.now()) {
+      const s = Math.max(0, Math.ceil((pomo.endsAt - Date.now()) / 1000));
+      t = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · ` + t;
+    }
+    if (document.title !== t) document.title = t;
+  }
+  function renderFavicon() {
+    const link = document.querySelector('link[rel="icon"]');
+    if (!link) return;
+    const emoji = (loadStored('home:favicon') || '').trim();
+    if (emoji) {
+      link.href = 'data:image/svg+xml,' + encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${escHtml(emoji)}</text></svg>`);
+    } else if (window.__origFav) {
+      link.href = window.__origFav;
+    }
+  }
+  (function wireTitleFav() {
+    const t = document.getElementById('set-tabtitle');
+    const f = document.getElementById('set-favicon');
+    t.value = loadStored('home:tabTitle') || '';
+    f.value = loadStored('home:favicon') || '';
+    t.addEventListener('input', () => { store('home:tabTitle', t.value); renderTabTitle(); });
+    f.addEventListener('input', () => { store('home:favicon', f.value); renderFavicon(); });
+  })();
+
+  /* ---------- analog clock face (big clock) ---------- */
+
+  // t = { h, m, s } in the chosen time zone; showSec draws the seconds hand
+  function drawAnalogClock(t, showSec) {
+    const cv = document.getElementById('analog-clock');
+    if (!cv || !cv.getContext) return;
+    // back the 132px face with device pixels so it stays crisp on HiDPI screens
+    const S = 132, C = S / 2;
+    const dpr = Math.min(devicePixelRatio || 1, 3);
+    if (cv.width !== Math.round(S * dpr)) {
+      cv.width = cv.height = Math.round(S * dpr);
+      cv.style.width = cv.style.height = S + 'px';
+    }
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cs = getComputedStyle(document.body);
+    const panel = cs.getPropertyValue('--panel').trim() || 'rgba(9,16,36,0.82)';
+    const border = cs.getPropertyValue('--border-strong').trim() || '#6c8cff';
+    const text = cs.getPropertyValue('--text').trim() || '#d7e0fb';
+    const accent = cs.getPropertyValue('--accent').trim() || '#6c8cff';
+    c.clearRect(0, 0, S, S);
+    c.beginPath(); c.arc(C, C, C - 4, 0, Math.PI * 2);
+    c.fillStyle = panel; c.fill();
+    c.lineWidth = 3; c.strokeStyle = border; c.stroke();
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      const r1 = C - 13, r0 = i % 3 === 0 ? C - 24 : C - 18;
+      c.strokeStyle = i % 3 === 0 ? accent : border;
+      c.lineWidth = i % 3 === 0 ? 4 : 2.5;
+      c.beginPath();
+      c.moveTo(C + Math.sin(a) * r0, C - Math.cos(a) * r0);
+      c.lineTo(C + Math.sin(a) * r1, C - Math.cos(a) * r1);
+      c.stroke();
+    }
+    const hand = (frac, len, w, color) => {
+      const a = frac * Math.PI * 2;
+      c.strokeStyle = color; c.lineWidth = w; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(C, C);
+      c.lineTo(C + Math.sin(a) * len, C - Math.cos(a) * len);
+      c.stroke();
+    };
+    hand((t.h % 12) / 12 + t.m / 720, C * 0.45, 7, text);
+    hand(t.m / 60 + t.s / 3600, C * 0.68, 5, text);
+    if (showSec) hand(t.s / 60, C * 0.78, 2, accent);
+    c.beginPath(); c.arc(C, C, 5, 0, Math.PI * 2);
+    c.fillStyle = accent; c.fill();
+  }
+
+  /* ---------- Look pane knobs: solid colors, blur, brightness ---------- */
+
+  (function wireBgKnobs() {
+    const a = document.getElementById('solid-a');
+    const b = document.getElementById('solid-b');
+    a.value = loadStored('home:solidA') || '#101a3a';
+    b.value = loadStored('home:solidB') || '#3a2a6a';
+    bgApi.setSolid(a.value, b.value);
+    const applySolid = () => {
+      store('home:solidA', a.value);
+      store('home:solidB', b.value);
+      bgApi.setSolid(a.value, b.value);
+    };
+    a.addEventListener('input', applySolid);
+    b.addEventListener('input', applySolid);
+
+    const blur = document.getElementById('bg-blur');
+    const blurVal = document.getElementById('bg-blur-val');
+    const bright = document.getElementById('bg-bright');
+    const brightVal = document.getElementById('bg-bright-val');
+    const sb = Math.max(0, Math.min(24, +(loadStored('home:bgBlur') || 0)));
+    const br = Math.max(50, Math.min(150, +(loadStored('home:bgBright') || 100)));
+    blur.value = String(sb); blurVal.textContent = String(sb);
+    bright.value = String(br); brightVal.textContent = br + '%';
+    bgApi.setFilters(sb, br / 100);
+    blur.addEventListener('input', () => {
+      blurVal.textContent = blur.value;
+      store('home:bgBlur', blur.value);
+      bgApi.setFilters(+blur.value, +bright.value / 100);
+    });
+    bright.addEventListener('input', () => {
+      brightVal.textContent = bright.value + '%';
+      store('home:bgBright', bright.value);
+      bgApi.setFilters(+blur.value, +bright.value / 100);
+    });
+  })();
+
+  /* ---------- custom search engine ---------- */
+
+  function customProvider() {
+    try {
+      const v = JSON.parse(loadStored('home:cengine'));
+      if (v && v.name && v.url && /^https?:\/\//.test(v.url)) {
+        return { id: 'custom', name: String(v.name).slice(0, 20), letter: (String(v.name)[0] || '?').toUpperCase(), url: String(v.url) };
+      }
+    } catch (e) { }
+    return null;
+  }
+  function allProviders() {
+    const c = customProvider();
+    return c ? [...PROVIDERS, c] : [...PROVIDERS];
+  }
+  // {q} in the template is the query; without it the query is appended
+  function engineUrl(q) {
+    const enc = encodeURIComponent(q);
+    const u = provider.url;
+    return u.includes('{q}') ? u.split('{q}').join(enc) : u + enc;
+  }
+  (function wireCustomEngine() {
+    const nameIn = document.getElementById('set-cengine-name');
+    const urlIn = document.getElementById('set-cengine-url');
+    let v = null;
+    try { v = JSON.parse(loadStored('home:cengine')); } catch (e) { }
+    nameIn.value = (v && v.name) || '';
+    urlIn.value = (v && v.url) || '';
+    let deb = 0;
+    const apply = () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => {
+        const name = nameIn.value.trim(), url = urlIn.value.trim();
+        if (name && url) store('home:cengine', JSON.stringify({ name, url }));
+        else try { localStorage.removeItem('home:cengine'); } catch (e) { }
+        if (provider.id === 'custom') {
+          // pick up the edited name/URL, or fall back when the engine was removed
+          const c = customProvider();
+          if (c) provider = c; else setProvider(PROVIDERS[0], false);
+        }
+        renderEngineOpts();
+        renderProviderMenu();
+        renderProvider();
+      }, 200);
+    };
+    nameIn.addEventListener('input', apply);
+    urlIn.addEventListener('input', apply);
+  })();
+
+  /* ---------- Widgets tab: on/off + pin per widget, their settings ---------- */
+
+  // one card per registered widget: switch it on/off, pin it to the page, and
+  // (for quotes / pomodoro) its own settings right underneath
+  function renderWidgetList() {
+    const host = document.getElementById('widget-list');
+    if (!host) return;
+    const on = new Set(loadWidgets());
+    const pinned = loadWidgetPos();
+    // per-widget settings blocks live in the markup; keep them across re-renders
+    const sets = {};
+    document.querySelectorAll('.wl-set[data-for]').forEach(s => { sets[s.dataset.for] = s; });
+    host.textContent = '';
+    for (const [type, def] of Object.entries(WIDGETS)) {
+      const item = document.createElement('div');
+      item.className = 'wl-item' + (on.has(type) ? ' on' : '');
+      const head = document.createElement('div');
+      head.className = 'wl-head';
+      const text = document.createElement('div');
+      text.className = 'wl-text';
+      const nm = document.createElement('div');
+      nm.className = 'wl-name';
+      nm.textContent = def.name;
+      const bl = document.createElement('div');
+      bl.className = 'wl-blurb';
+      bl.textContent = def.blurb || '';
+      text.append(nm, bl);
+      const pin = document.createElement('button');
+      pin.type = 'button';
+      pin.className = 'wl-pin' + (pinned[type] ? ' active' : '');
+      pin.textContent = pinned[type] ? 'Pinned' : 'Pin';
+      pin.title = pinned[type] ? 'Back into the side panel' : 'Put it on the page';
+      pin.disabled = !on.has(type);
+      pin.addEventListener('click', () => togglePin(type));
+      const sw = document.createElement('label');
+      sw.className = 'set-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = on.has(type);
+      cb.setAttribute('aria-label', `Show ${def.name}`);
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          addWidget(type);
+          // a freshly enabled widget should be visible right away
+          if (!modLayer.classList.contains('open') && !loadWidgetPos()[type]) setLayer(true);
+        } else {
+          const card = document.querySelector(`.mod-card[data-type="${type}"]`);
+          if (card) removeWidget(+card.dataset.idx, type);
+        }
+      });
+      sw.appendChild(cb);
+      head.append(text, pin, sw);
+      item.appendChild(head);
+      if (sets[type]) { sets[type].hidden = !on.has(type); item.appendChild(sets[type]); }
+      host.appendChild(item);
+    }
+    for (const [t, s] of Object.entries(sets)) if (!WIDGETS[t]) s.hidden = true;
+  }
+
+  (function wireWidgetSettings() {
+    const q = document.getElementById('set-quotes');
+    q.value = loadStored('home:quotesCustom') || '';
+    q.addEventListener('input', () => store('home:quotesCustom', q.value));
+    const cfg = loadPomoCfg();
+    const w = document.getElementById('pomo-work');
+    const s = document.getElementById('pomo-short');
+    const l = document.getElementById('pomo-long');
+    w.value = cfg.work; s.value = cfg.short; l.value = cfg.long;
+    const applyCfg = () => store('home:pomoCfg', JSON.stringify({
+      work: Math.max(1, Math.min(180, +w.value || 25)),
+      short: Math.max(1, Math.min(60, +s.value || 5)),
+      long: Math.max(1, Math.min(120, +l.value || 15)),
+    }));
+    w.addEventListener('input', applyCfg);
+    s.addEventListener('input', applyCfg);
+    l.addEventListener('input', applyCfg);
+    document.getElementById('widget-reset').addEventListener('click', () => {
+      document.querySelectorAll('.mod-card.mod-float').forEach(card => dockCard(card, card.dataset.type));
+      saveWidgetPos({});
+      renderWidgetList();
+    });
+    renderWidgetList();
+  })();
+
+  /* ---------- pinned widgets: placed anywhere on the page ---------- */
+
+  // positions are stored as fractions of the viewport ({fx, fy}) so a pinned
+  // widget keeps its place relative to the screen when the window resizes;
+  // older builds stored pixels ({x, y}) and still load
+  function loadWidgetPos() {
+    try { const v = JSON.parse(loadStored('home:widgetPos')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+  }
+  function saveWidgetPos(p) { store('home:widgetPos', JSON.stringify(p)); }
+  function posToPx(p) {
+    if (!p) return null;
+    if (isFinite(p.fx) && isFinite(p.fy)) return { x: p.fx * innerWidth, y: p.fy * innerHeight };
+    if (isFinite(p.x) && isFinite(p.y)) return { x: p.x, y: p.y };
+    return null;
+  }
+  // pinned widgets snap to an 8px grid so rows line up neatly. (A literal, not a
+  // const: restored widgets are pinned before this part of the file has run.)
+  function clampPos(card, x, y) {
+    const w = card.offsetWidth || 250, h = card.offsetHeight || 120;
+    return {
+      x: Math.max(8, Math.min(innerWidth - w - 8, Math.round(x / 8) * 8)),
+      y: Math.max(8, Math.min(innerHeight - Math.min(h, 120) - 8, Math.round(y / 8) * 8)),
+    };
+  }
+  function savePinned(card, type) {
+    const p = loadWidgetPos();
+    p[type] = { fx: (parseFloat(card.style.left) || 0) / innerWidth, fy: (parseFloat(card.style.top) || 0) / innerHeight };
+    saveWidgetPos(p);
+  }
+  function syncPinBtn(card) {
+    const b = card.querySelector('.mod-pin');
+    if (!b) return;
+    const on = card.classList.contains('mod-float');
+    b.classList.toggle('active', on);
+    b.title = on ? 'Unpin — back into the side panel' : 'Pin to the page';
+  }
+  function pinCard(card, x, y) {
+    card.classList.add('mod-float');
+    document.body.appendChild(card);
+    const p = clampPos(card, x, y);
+    card.style.left = p.x + 'px';
+    card.style.top = p.y + 'px';
+    syncPinBtn(card);
+  }
+  function dockCard(card, type) {
+    card.classList.remove('mod-float');
+    card.style.left = '';
+    card.style.top = '';
+    modBody.appendChild(card);
+    const p = loadWidgetPos();
+    delete p[type];
+    saveWidgetPos(p);
+    syncPinBtn(card);
+    renderEmptyHint();
+  }
+  // first free spot for a newly pinned card: down the left edge, then the right
+  function freeSpot(card) {
+    const w = card.offsetWidth || 250, h = card.offsetHeight || 140;
+    const taken = [...document.querySelectorAll('.mod-card.mod-float')]
+      .filter(c => c !== card).map(c => c.getBoundingClientRect());
+    const hit = (x, y) => taken.some(r => x < r.right + 12 && x + w + 12 > r.left && y < r.bottom + 12 && y + h + 12 > r.top);
+    for (const x of [24, innerWidth - w - 24]) {
+      for (let y = 72; y + h < innerHeight - 24; y += 16) if (!hit(x, y)) return { x, y };
+    }
+    return { x: 24, y: 72 };
+  }
+  function togglePin(type) {
+    const card = document.querySelector(`.mod-card[data-type="${type}"]`);
+    if (!card) return;
+    if (card.classList.contains('mod-float')) dockCard(card, type);
+    else {
+      const s = freeSpot(card);
+      pinCard(card, s.x, s.y);
+      savePinned(card, type);
+      renderEmptyHint();
+      // make sure it's actually visible
+      const show = loadShow();
+      if (!show.widgets) { show.widgets = true; store('home:show', JSON.stringify(show)); applyShow(show); renderShowOpts(); }
+    }
+    renderWidgetList();
+  }
+  // keep pinned cards on screen (and in proportion) when the window resizes
+  addEventListener('resize', () => {
+    const pos = loadWidgetPos();
+    document.querySelectorAll('.mod-card.mod-float').forEach(card => {
+      const px = posToPx(pos[card.dataset.type]);
+      if (!px) return;
+      const p = clampPos(card, px.x, px.y);
+      card.style.left = p.x + 'px';
+      card.style.top = p.y + 'px';
+    });
+  });
+  function bindCardDrag(card, type) {
+    const head = card.querySelector('.mod-card-head');
+    if (!head) return;
+    head.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || e.target.closest('.mod-remove, .mod-pin')) return;
+      const sx = e.clientX, sy = e.clientY;
+      const rect = card.getBoundingClientRect();
+      let moved = false;
+      const move = ev => {
+        if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 7) return;
+        if (!moved) {
+          moved = true;
+          if (card.parentElement === modBody) pinCard(card, rect.left, rect.top);
+          card.classList.add('dragging');
+        }
+        const p = clampPos(card, rect.left + ev.clientX - sx, rect.top + ev.clientY - sy);
+        card.style.left = p.x + 'px';
+        card.style.top = p.y + 'px';
+      };
+      const up = ev => {
+        removeEventListener('pointermove', move);
+        removeEventListener('pointerup', up);
+        card.classList.remove('dragging');
+        if (!moved) return;
+        const r = modLayer.getBoundingClientRect();
+        if (modLayer.classList.contains('open') &&
+            ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+          dockCard(card, type);
+        } else {
+          savePinned(card, type);
+          renderEmptyHint();
+        }
+        renderWidgetList();
+      };
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', up);
+    });
+    head.addEventListener('dblclick', e => {
+      if (e.target.closest('.mod-remove, .mod-pin')) return;
+      if (card.classList.contains('mod-float')) { dockCard(card, type); renderWidgetList(); }
+    });
+  }
+
+  /* ---------- custom quick links (Settings → Links) ---------- */
+
+  function removeCustomLink(url) {
+    saveLinks(loadLinks().filter(l => !(l.kind !== 'folder' && l.url === url)));
+    refreshTabStrip(true);
+    renderLinkList();
+  }
+  function renderLinkList() {
+    const list = document.getElementById('link-list');
+    if (!list) return;
+    const links = loadLinks();
+    list.innerHTML = '';
+    if (!links.length) {
+      const p = document.createElement('p');
+      p.className = 'set-note';
+      p.textContent = 'No links yet — add one above, or right-click the page and pick “Add / manage links”.';
+      list.appendChild(p);
+      return;
+    }
+    links.forEach((l, i) => list.appendChild(linkRow(l, i, -1)));
+  }
+  // path ([i] or [folder, child]) of the row being dragged in Settings → Links
+  let linkDragPath = null;
+  // move the link/folder at path `from` relative to the row at path `to`:
+  // zone 'before'/'after' reorders, 'into' groups into (or creates) a folder
+  function moveLink(from, to, zone) {
+    if (from.join('.') === to.join('.')) return;
+    const links = loadLinks();
+    const at = p => p.length === 1 ? links[p[0]] : (links[p[0]] && (links[p[0]].children || [])[p[1]]);
+    const dragged = at(from), target = at(to);
+    if (!dragged || !target) return;
+    // folders only live at the top level, and never inside themselves
+    if (dragged.kind === 'folder' && (to.length > 1 || zone === 'into')) return;
+    if (to.length > 1 && to[0] === from[0] && from.length === 1) return;
+    // detach the dragged item
+    const srcList = from.length === 1 ? links : links[from[0]].children;
+    srcList.splice(srcList.indexOf(dragged), 1);
+    if (zone === 'into') {
+      if (target.kind === 'folder') {
+        target.children = [...(target.children || []), dragged];
+      } else {
+        const list = to.length === 1 ? links : links[to[0]].children;
+        list.splice(list.indexOf(target), 1,
+          { kind: 'folder', label: 'Folder', children: [target, dragged] });
+      }
+    } else {
+      const list = to.length === 1 ? links : links[to[0]].children;
+      const idx = list.indexOf(target);
+      if (idx < 0) return;
+      list.splice(zone === 'after' ? idx + 1 : idx, 0, dragged);
+    }
+    // a folder emptied by the move disappears
+    saveLinks(links.filter(x => x.kind !== 'folder' || (x.children && x.children.length)));
+    renderLinkList();
+    refreshTabStrip(true);
+  }
+  // one row for a link or a folder (folder children are nested rows)
+  function linkRow(l, i, parent) {
+    const row = document.createElement('div');
+    row.className = 'link-row' + (l.kind === 'folder' ? ' folder' : '') + (parent >= 0 ? ' sub' : '');
+    row.draggable = true;
+    const grip = document.createElement('span');
+    grip.className = 'drag-h';
+    grip.textContent = '⠿';
+    grip.title = l.kind === 'folder'
+      ? 'Drag to reorder · drop links onto this folder to add them'
+      : 'Drag to reorder (drop on a row edge) · drop onto the middle of a row to group into a folder';
+    row.appendChild(grip);
+    const label = document.createElement('input');
+    label.className = 'set-input';
+    label.value = l.label || '';
+    label.maxLength = 32;
+    label.placeholder = 'Label';
+    const url = document.createElement('input');
+    url.className = 'set-input';
+    url.value = l.url || '';
+    url.maxLength = 300;
+    url.placeholder = 'https://…';
+    const icon = document.createElement('input');
+    icon.className = 'set-input link-icon-in';
+    icon.value = l.icon || '';
+    icon.maxLength = 4;
+    icon.placeholder = '🌤';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'mod-icon-btn';
+    del.textContent = '×';
+    del.title = 'Remove';
+    row.append(label, url, icon, del);
+    if (l.kind === 'folder') {
+      url.remove(); icon.remove();
+      const badge = document.createElement('span');
+      badge.className = 'wg-badge';
+      badge.textContent = String((l.children || []).length);
+      row.appendChild(badge);
+    }
+    const commit = () => {
+      const links = loadLinks();
+      if (parent >= 0) {
+        const f = links[parent];
+        if (f && f.kind === 'folder' && f.children[i]) {
+          f.children[i].label = label.value.trim();
+          f.children[i].url = url.value.trim();
+          f.children[i].icon = icon.value.trim();
+        }
+      } else if (links[i]) {
+        if (links[i].kind === 'folder') links[i].label = label.value.trim() || 'Folder';
+        else {
+          links[i].label = label.value.trim();
+          links[i].url = url.value.trim();
+          links[i].icon = icon.value.trim();
+        }
+      }
+      saveLinks(links);
+      refreshTabStrip(true);
+    };
+    [label, url, icon].forEach(el => el.addEventListener('input', commit));
+    del.addEventListener('click', () => {
+      const links = loadLinks();
+      if (parent >= 0) {
+        const f = links[parent];
+        if (f && f.kind === 'folder') f.children.splice(i, 1);
+      } else links.splice(i, 1);
+      saveLinks(links);
+      renderLinkList();
+      refreshTabStrip(true);
+    });
+    // drag & drop: the top/bottom edge of a row reorders (before/after), the
+    // middle of a link folds both into a new folder, the middle of a folder's
+    // header drops the link into it; children can be reordered or dragged out
+    const path = parent >= 0 ? [parent, i] : [i];
+    row.dataset.path = path.join('.');
+    const zoneOf = e => {
+      const r = (l.kind === 'folder' ? label : row).getBoundingClientRect();
+      const y = (e.clientY - r.top) / r.height;
+      if (y < 0.3) return 'before';
+      if (l.kind === 'folder' || parent < 0) return y > 0.7 && l.kind !== 'folder' ? 'after' : 'into';
+      return y < 0.5 ? 'before' : 'after'; // inside a folder: reorder only
+    };
+    const clearMarks = () => row.classList.remove('drag-over', 'drag-before', 'drag-after');
+    row.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      linkDragPath = path;
+      e.dataTransfer.setData('text/plain', row.dataset.path);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => { linkDragPath = null; });
+    row.addEventListener('dragover', e => {
+      if (!linkDragPath) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearMarks();
+      const z = zoneOf(e);
+      row.classList.add(z === 'into' ? 'drag-over' : 'drag-' + z);
+    });
+    row.addEventListener('dragleave', e => { if (!row.contains(e.relatedTarget)) clearMarks(); });
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearMarks();
+      const from = linkDragPath;
+      linkDragPath = null;
+      if (from) moveLink(from, path, zoneOf(e));
+    });
+    if (l.kind === 'folder') {
+      (l.children || []).forEach((child, ci) => {
+        row.appendChild(linkRow(child, ci, i));
+      });
+    }
+    return row;
+  }
+  (function wireLinkAdd() {
+    const label = document.getElementById('link-label');
+    const url = document.getElementById('link-url');
+    const icon = document.getElementById('link-icon');
+    const add = document.getElementById('link-add');
+    const doAdd = () => {
+      let u = url.value.trim();
+      if (!u) return;
+      if (!/^(https?:|chrome:\/\/|edge:\/\/|about:)/i.test(u)) u = 'https://' + u;
+      try { new URL(u); } catch (e) { url.focus(); return; }
+      const links = loadLinks();
+      links.push({ kind: 'link', label: label.value.trim() || hostOf(u), url: u, icon: icon.value.trim() });
+      saveLinks(links);
+      label.value = ''; url.value = ''; icon.value = '';
+      renderLinkList();
+      refreshTabStrip(true);
+    };
+    add.addEventListener('click', doAdd);
+    url.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
+    label.addEventListener('keydown', e => { if (e.key === 'Enter') url.focus(); });
+    renderLinkList();
+  })();
+
+  /* ---------- More tab: presets, backup (export / import) ---------- */
+
+  (function wireData() {
+    const imTa = document.getElementById('data-import-ta');
+    const exportObj = () => {
+      const obj = {};
+      try {
+        for (const k of Object.keys(localStorage)) if (k.startsWith('home:')) obj[k] = localStorage.getItem(k);
+      } catch (e) { }
+      return obj;
+    };
+    const exportJson = () => JSON.stringify(exportObj(), null, 2);
+
+    // backup
+    const flash = (btn, label) => {
+      const prev = btn.textContent;
+      btn.textContent = label;
+      setTimeout(() => { btn.textContent = prev; }, 1400);
+    };
+    document.getElementById('data-copy').addEventListener('click', async e => {
+      try { await navigator.clipboard.writeText(exportJson()); flash(e.currentTarget, 'Copied ✓'); }
+      catch (err) { flash(e.currentTarget, 'Copy failed'); }
+    });
+    document.getElementById('data-download').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([exportJson()], { type: 'application/json' }));
+      a.download = `home-settings-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    });
+    function importText(text) {
+      let obj;
+      try { obj = JSON.parse(text); } catch (e) { alert('That is not valid JSON.'); return; }
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) { alert('Expected a JSON object of home:* keys.'); return; }
+      if (!confirm('Import these settings? Your current settings are overwritten.')) return;
+      for (const [k, v] of Object.entries(obj)) {
+        if (!k.startsWith('home:')) continue;
+        try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); } catch (e) { }
+      }
+      location.reload();
+    }
+    document.getElementById('data-import').addEventListener('click', () => importText(imTa.value));
+    const fileIn = document.getElementById('data-import-input');
+    document.getElementById('data-import-file').addEventListener('click', () => fileIn.click());
+    fileIn.addEventListener('change', async () => {
+      const f = fileIn.files && fileIn.files[0];
+      fileIn.value = '';
+      if (f) importText(await f.text());
+    });
+
+    // presets: named snapshots of how the page looks & behaves. Your content
+    // (notes, links, quotes), running state and caches are left out, so
+    // switching presets never loses a to-do or a link.
+    const PRESET_SKIP = new Set([
+      'home:presets', 'home:notes', 'home:links', 'home:quotesCustom', 'home:pomo', 'home:searches',
+      'home:tabCounts', 'home:wallLast', 'home:wx', 'home:imgtheme', 'home:setTab', 'home:layerOpen',
+    ]);
+    const loadPresets = () => {
+      try { const v = JSON.parse(loadStored('home:presets')); return Array.isArray(v) ? v.filter(p => p && p.name && p.data) : []; }
+      catch (e) { return []; }
+    };
+    const savePresets = list => store('home:presets', JSON.stringify(list.slice(0, 20)));
+    const snapshot = () => {
+      const o = exportObj();
+      for (const k of Object.keys(o)) if (PRESET_SKIP.has(k)) delete o[k];
+      return o;
+    };
+    function applyPreset(data, merge) {
+      try {
+        // a saved preset replaces the whole setup; a starter only nudges a few keys
+        if (!merge) {
+          for (const k of Object.keys(localStorage)) {
+            if (k.startsWith('home:') && !PRESET_SKIP.has(k)) localStorage.removeItem(k);
+          }
+        }
+        for (const [k, v] of Object.entries(data)) if (k.startsWith('home:') && !PRESET_SKIP.has(k)) localStorage.setItem(k, v);
+      } catch (e) { }
+      location.reload();
+    }
+    const nameIn = document.getElementById('preset-name');
+    const listEl = document.getElementById('preset-list');
+    function renderPresets() {
+      const list = loadPresets();
+      listEl.textContent = '';
+      if (!list.length) {
+        const p = document.createElement('p');
+        p.className = 'set-note';
+        p.style.margin = '0';
+        p.textContent = 'No saved presets yet — set things up the way you like, name it and press “Save current”.';
+        listEl.appendChild(p);
+        return;
+      }
+      list.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'preset-row';
+        const nm = document.createElement('span');
+        nm.className = 'p-name';
+        nm.textContent = p.name;
+        const dt = document.createElement('span');
+        dt.className = 'p-date';
+        dt.textContent = p.ts ? new Date(p.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
+        const btn = (label, title, fn) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'wall-btn';
+          b.textContent = label;
+          b.title = title;
+          b.addEventListener('click', fn);
+          return b;
+        };
+        row.append(nm, dt,
+          btn('Apply', 'Switch to this preset', () => {
+            if (confirm(`Switch to “${p.name}”? Unsaved changes to your current setup are lost.`)) applyPreset(p.data, false);
+          }),
+          btn('Update', 'Overwrite it with the current setup', e => {
+            const l = loadPresets();
+            if (!l[i]) return;
+            l[i] = { ...l[i], data: snapshot(), ts: Date.now() };
+            savePresets(l);
+            flash(e.currentTarget, 'Saved ✓');
+          }),
+          btn('×', 'Delete this preset', () => {
+            if (!confirm(`Delete the preset “${p.name}”?`)) return;
+            const l = loadPresets();
+            l.splice(i, 1);
+            savePresets(l);
+            renderPresets();
+          }));
+        listEl.appendChild(row);
+      });
+    }
+    function saveCurrent() {
+      const name = nameIn.value.trim() || `Preset ${loadPresets().length + 1}`;
+      const list = loadPresets();
+      const i = list.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+      const entry = { name, data: snapshot(), ts: Date.now() };
+      if (i >= 0) {
+        if (!confirm(`Replace the preset “${list[i].name}”?`)) return;
+        list[i] = entry;
+      } else list.unshift(entry);
+      savePresets(list);
+      nameIn.value = '';
+      renderPresets();
+    }
+    document.getElementById('preset-save').addEventListener('click', saveCurrent);
+    nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') saveCurrent(); });
+    renderPresets();
+
+    const STARTERS = {
+      midnight: { 'home:theme': 'dark', 'home:phase': 'night', 'home:bg': 'scene', 'home:motion': 'on' },
+      sunrise: { 'home:theme': 'amber', 'home:phase': 'morning', 'home:bg': 'grain', 'home:motion': 'on' },
+      paper: {
+        'home:theme': 'bright', 'home:phase': 'day', 'home:bg': 'grid', 'home:motion': 'off',
+        'home:show': JSON.stringify({ ...DEFAULT_SHOW, pulse: false }),
+      },
+    };
+    document.getElementById('profile-opts').addEventListener('click', e => {
+      const b = e.target.closest('button[data-profile]');
+      if (!b || !STARTERS[b.dataset.profile]) return;
+      if (!confirm(`Apply the “${b.textContent}” starter? It changes your theme, phase and background.`)) return;
+      applyPreset(STARTERS[b.dataset.profile], true);
+    });
+  })();
+
+  /* ---------- help overlay ---------- */
+
+  function toggleHelp(force) {
+    const ov = document.getElementById('help-overlay');
+    ov.hidden = force !== undefined ? !force : !ov.hidden;
+  }
+  document.getElementById('help-close').addEventListener('click', () => toggleHelp(false));
+  document.getElementById('help-overlay').addEventListener('click', e => { if (e.target.id === 'help-overlay') toggleHelp(false); });
+
+  /* ---------- page context menu (Bonjourr-style) ---------- */
+
+  const ctxEl = document.getElementById('ctx-menu');
+  function closeCtx() { ctxEl.hidden = true; ctxEl.innerHTML = ''; }
+  function openCtx(x, y, items) {
+    ctxEl.innerHTML = '';
+    for (const [label, fn] of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ctx-item';
+      b.textContent = label;
+      b.addEventListener('click', () => { closeCtx(); fn(); });
+      ctxEl.appendChild(b);
+    }
+    ctxEl.hidden = false;
+    const r = ctxEl.getBoundingClientRect();
+    ctxEl.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 8)) + 'px';
+    ctxEl.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 8)) + 'px';
+  }
+  document.addEventListener('contextmenu', e => {
+    if (isTypingTarget(e.target)) return; // fields keep the native menu
+    const chip = e.target.closest('.tab-chip');
+    const own = chip && chip._item && chip._item.custom && chip._item.kind !== 'folder';
+    // real links and bookmark/recent chips keep the browser's menu
+    // ("Open in new tab", "Copy link address", …); only *your* links get ours
+    if (!own && (chip || e.target.closest('a[href]'))) return;
+    e.preventDefault();
+    if (own) {
+      openCtx(e.clientX, e.clientY, [
+        ['Edit / manage links', () => { setSettings(true); showSetTab('links'); }],
+        ['Remove this link', () => removeCustomLink(chip._item.url)],
+      ]);
+      return;
+    }
+    const items = [
+      ['Add / manage links', () => {
+        if (currentTabMode() !== 'custom') { store('home:tabs', 'custom'); renderTabOpts(); applyTabStrip(); }
+        setSettings(true);
+        showSetTab('links');
+      }],
+    ];
+    if (walls.length > 1) items.push(['Next wallpaper', () => showWall((wallShown + 1) % walls.length, true)]);
+    if (document.querySelector('.mod-card[data-type="quotes"]')) {
+      items.push(['Next quote', () => document.dispatchEvent(new Event('home:next-quote'))]);
+    }
+    items.push(['Toggle widgets  (W)', () => setLayer(!modLayer.classList.contains('open'))]);
+    items.push(['Settings', () => setSettings(true)]);
+    items.push(['Help  (?)', () => toggleHelp(true)]);
+    openCtx(e.clientX, e.clientY, items);
+  });
+  document.addEventListener('click', e => { if (!ctxEl.hidden && !ctxEl.contains(e.target)) closeCtx(); });
+
+  /* ---------- page-wide keys: help, ctx, Alt+1..9 ---------- */
+
+  document.addEventListener('keydown', e => {
+    const inField = isTypingTarget(document.activeElement);
+    // "?" alone (as the footer hint says) or Ctrl/Cmd+Shift+?
+    if (e.key === '?' && !inField && !e.altKey) {
+      e.preventDefault();
+      toggleHelp();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (!ctxEl.hidden) { closeCtx(); return; }
+      const ov = document.getElementById('help-overlay');
+      if (ov && !ov.hidden) { toggleHelp(false); return; }
+    }
+    // Alt+1..9 opens the first links of the quick bar
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !inField && /^[1-9]$/.test(e.key)) {
+      const flat = lastStripItems.filter(it => it.kind !== 'folder' && it.url);
+      const it = flat[+e.key - 1];
+      if (!it) return;
+      e.preventDefault();
+      openStripItem(it, undefined);
+    }
+  });
+
+  /* ---------- weather details popover ---------- */
+
+  function wxIconSvg(icon, size) {
+    let path = '';
+    const rows = WX_ICONS[icon] || WX_ICONS.cloud;
+    for (const [y, row] of rows.entries()) {
+      for (let x = 0; x < row.length; x++) if (row[x] === '#') path += `M${x} ${y}h1v1h-1z`;
+    }
+    return `<svg width="${size}" height="${size}" viewBox="0 0 11 11" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>`;
+  }
+  function renderWxPop() {
+    const pop = document.getElementById('wx-pop');
+    if (!pop) return;
+    const c = wxCache();
+    if (!c) {
+      pop.innerHTML = '<div class="wx-pop-empty">no reading yet — weather refreshes every 10 minutes</div>';
+      return;
+    }
+    const d = wxDescribe(c.code, c.isDay);
+    const fmtT = v => v === null || v === undefined || !isFinite(v) ? '—' : `${wxTemp(v)}°`;
+    const hm = iso => { try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }); } catch (e) { return '—'; } };
+    const rows = [
+      ['Feels like', fmtT(c.feelsC)],
+      ['Humidity', c.humidity != null ? Math.round(c.humidity) + '%' : '—'],
+      ['Wind', isFinite(c.wind) ? Math.round(c.wind) + ' km/h' : '—'],
+      ['Sunrise', c.sunrise ? hm(c.sunrise) : '—'],
+      ['Sunset', c.sunset ? hm(c.sunset) : '—'],
+      ['Today', c.tMin != null && c.tMax != null ? `${fmtT(c.tMin)} – ${fmtT(c.tMax)}` : '—'],
+    ];
+    const hours = (c.nextHours || []).map(h => {
+      const hd = wxDescribe(h.code, true);
+      return `<span class="wx-h" title="${escHtml(hd.label)}">${hm(h.t)} ${wxIconSvg(hd.icon, 10)} ${fmtT(h.tempC)}</span>`;
+    }).join('');
+    const place = c.place || (isFinite(c.lat) ? `${c.lat}, ${c.lon}` : '');
+    const detail = 'https://wttr.in/' + encodeURIComponent(place || '');
+    pop.innerHTML =
+      `<div class="wx-pop-head">${wxIconSvg(d.icon, 16)} <strong>${fmtT(c.tempC)}</strong> ${escHtml(d.label)}</div>` +
+      `<div class="wx-pop-place">${escHtml(place || 'your location')} · updated ${hm(new Date(c.ts).toISOString())}</div>` +
+      `<div class="wx-grid">${rows.map(r => `<span>${r[0]}</span><b>${r[1]}</b>`).join('')}</div>` +
+      (hours ? `<div class="wx-hourly">${hours}</div>` : '') +
+      `<a class="wx-link" href="${detail}" target="_blank" rel="noopener">detailed forecast ↗</a>`;
+  }
+  (function wireWxPop() {
+    const pop = document.getElementById('wx-pop');
+    if (!pop) return;
+    wxSeg.style.cursor = 'pointer';
+    wxSeg.addEventListener('click', e => {
+      e.stopPropagation();
+      const show = pop.hidden;
+      pop.hidden = !show;
+      if (show) renderWxPop();
+    });
+    document.addEventListener('click', e => {
+      if (!pop.hidden && !pop.contains(e.target) && !wxSeg.contains(e.target)) pop.hidden = true;
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') pop.hidden = true; });
+  })();
+
+  /* ---------- first paint ---------- */
+
+  renderGreeting();
+  applyFont();
+  applyUserCss();
+  renderFavicon();
+  renderTabTitle();
 })();
