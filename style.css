@@ -1593,6 +1593,35 @@ select.set-input option, select.set-input optgroup { background: var(--suggest-b
 
 .mod-alert-ico { font-size: 14px; }
 
+/* shared dock for widget alerts: stacks whatever is showing (first widget at
+   the bottom, no gaps for hidden or switched-off ones) and can be dragged */
+.mod-alerts {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 8px;
+  z-index: 16;
+  pointer-events: none;
+}
+.mod-alerts.moved { transform: none; bottom: auto; }
+.mod-alerts .mod-alert {
+  position: static;
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  animation: alert-in 0.25s ease both;
+}
+.mod-alerts .mod-alert:not(.show) { display: none; }
+.mod-alerts.dragging .mod-alert { cursor: grabbing; }
+@keyframes alert-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
 /* good vibes widget */
 
 .wg-vibes {
@@ -2051,7 +2080,7 @@ body.no-input .top-stack { bottom: 18px; }
 
 .big-clock { display: flex; flex-direction: column; align-items: center; animation: fade 0.7s both; }
 .big-digits {
-  font: 400 clamp(40px, 7vw, 68px)/1 var(--font-pixel);
+  font: 400 calc(clamp(40px, 7vw, 68px) * var(--clock-scale, 1))/1 var(--font-pixel);
   letter-spacing: 0.04em;
   color: var(--text);
   text-shadow: 0 2px 18px var(--edge);
@@ -2063,18 +2092,34 @@ body.no-input .top-stack { bottom: 18px; }
 
 .analog-clock {
   display: block;
-  width: 132px;
-  height: 132px;
+  width: calc(132px * var(--clock-scale, 1));
+  height: calc(132px * var(--clock-scale, 1));
 }
 
 .greeting {
   text-align: center;
-  font: 400 13px/1.4 var(--font-pixel);
+  font: 400 calc(13px * var(--greet-scale, 1))/1.4 var(--font-pixel);
   letter-spacing: 0.08em;
   color: var(--text-2);
   animation: fade 0.7s 0.08s both;
-  transition: color 1s ease;
+  transition: color 1s ease, text-shadow 1s ease;
 }
+
+/* the big clock and greeting sit straight on the background, not on a panel,
+   so their ink follows what's behind them (sampled by app.js → ink-light /
+   ink-dark) or the Layout → Color choice; a soft halo keeps edges readable */
+body.ink-light .big-digits, body.ink-light .greeting { color: rgba(255, 255, 255, 0.96); }
+body.ink-light .big-digits .sec, body.ink-light .big-digits .ampm { color: rgba(255, 255, 255, 0.72); }
+body.ink-light .big-digits { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 22px rgba(0, 0, 0, 0.45); }
+body.ink-light .greeting { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 12px rgba(0, 0, 0, 0.5); }
+body.ink-dark .big-digits, body.ink-dark .greeting { color: #0e1a33; }
+body.ink-dark .big-digits .sec, body.ink-dark .big-digits .ampm { color: rgba(14, 26, 51, 0.7); }
+body.ink-dark .big-digits { text-shadow: 0 1px 2px rgba(255, 255, 255, 0.45), 0 2px 22px rgba(255, 255, 255, 0.4); }
+body.ink-dark .greeting { text-shadow: 0 1px 2px rgba(255, 255, 255, 0.55), 0 1px 12px rgba(255, 255, 255, 0.45); }
+body.ink-accent .big-digits, body.ink-accent .greeting { color: var(--accent); }
+body.ink-accent .big-digits .sec, body.ink-accent .big-digits .ampm { color: var(--accent); opacity: 0.75; }
+body.ink-accent .big-digits { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 22px rgba(0, 0, 0, 0.45); }
+body.ink-accent .greeting { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 12px rgba(0, 0, 0, 0.5); }
 
 /* ---------- weather details popover ---------- */
 
