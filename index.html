@@ -239,6 +239,11 @@
           </div>
           <label class="set-check"><input type="checkbox" id="clock-sec" /> Seconds</label>
         </div>
+        <div class="set-row" id="clock-scale-row">
+          <span class="set-name">Scale</span>
+          <input type="range" id="clock-scale" class="dot-slider" min="60" max="220" step="10" value="100" aria-label="Big clock size, percent" />
+          <span class="set-val" id="clock-scale-val">100%</span>
+        </div>
       </div>
       <div class="set-row">
         <span class="set-name">Zone</span>
@@ -255,6 +260,24 @@
         <input class="set-input" id="set-greet" type="text" maxlength="24" spellcheck="false"
                autocomplete="off" placeholder="greet me by name…" aria-label="Greeting name" />
       </label>
+      <div class="set-sub">
+        <div class="set-row">
+          <span class="set-name">Size</span>
+          <input type="range" id="greet-scale" class="dot-slider" min="80" max="260" step="10" value="100" aria-label="Greeting size, percent" />
+          <span class="set-val" id="greet-scale-val">100%</span>
+        </div>
+        <div class="set-row">
+          <span class="set-name">Color</span>
+          <div class="phase-opts" id="ink-opts" role="group" aria-label="Clock and greeting color">
+            <button type="button" data-ink="auto" title="Light or dark, whichever reads best on what's behind">Auto</button>
+            <button type="button" data-ink="light">Light</button>
+            <button type="button" data-ink="dark">Dark</button>
+            <button type="button" data-ink="accent">Accent</button>
+            <button type="button" data-ink="theme" title="The theme's own text color (as before)">Theme</button>
+          </div>
+        </div>
+      </div>
+      <p class="set-note">Color applies to the big clock and the greeting.</p>
 
       <div class="set-sec">Show</div>
       <div class="phase-opts" id="show-opts" role="group" aria-label="Show or hide elements">
@@ -352,7 +375,14 @@
         </div>
       </div>
       <p class="set-note"><b>Pin</b> puts a widget on the page — drag its header to move it anywhere; it stays put when the
-        side panel (<span class="key">W</span>) is closed. <button type="button" class="wall-btn" id="widget-reset">Unpin all</button></p>
+        side panel (<span class="key">W</span>) is closed. Widget alerts can be dragged too.</p>
+      <div class="set-row">
+        <span class="set-name">Reset</span>
+        <div class="wall-actions">
+          <button type="button" class="wall-btn" id="widget-reset" title="Put every pinned widget back into the side panel">Unpin all widgets</button>
+          <button type="button" class="wall-btn" id="alert-reset" title="Move widget alerts back to the bottom center">Reset alert position</button>
+        </div>
+      </div>
 
       <div class="set-sec">Weather · in the info bar</div>
       <div class="set-row">
