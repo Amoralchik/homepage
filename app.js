@@ -3770,9 +3770,86 @@ const bgApi = (function background() {
   renderEmptyHint();
   setLayer(loadStored('home:layerOpen') !== '0');
 
+  /* ---------- widget alerts dock ---------- */
+
+  // widgets (e.g. bus trackers in mods.js) pop alerts at the bottom of the
+  // page. They all live in one dock: it stacks the visible ones without gaps
+  // (a switched-off widget leaves no hole) and can be dragged anywhere —
+  // the spot is remembered; double-click an alert to put the dock back.
+  const alertDock = document.createElement('div');
+  alertDock.className = 'mod-alerts';
+  alertDock.id = 'mod-alerts';
+  alertDock.title = 'Drag to move · double-click to reset';
+  document.body.appendChild(alertDock);
+  function adoptAlert(el) {
+    el.style.bottom = ''; // older mods positioned each alert themselves
+    el.style.top = '';
+    if (el.parentElement !== alertDock) alertDock.appendChild(el);
+  }
+  // any .mod-alert added straight to <body> (older mods.js) is moved in
+  new MutationObserver(muts => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (n.nodeType === 1 && n.classList.contains('mod-alert')) adoptAlert(n);
+    }
+  }).observe(document.body, { childList: true });
+  function placeAlertDock() {
+    let p = null;
+    try { p = JSON.parse(loadStored('home:alertPos')); } catch (e) { }
+    if (!p || !isFinite(p.fx) || !isFinite(p.fy)) {
+      alertDock.classList.remove('moved');
+      alertDock.style.left = alertDock.style.top = '';
+      return;
+    }
+    alertDock.classList.add('moved');
+    const r = alertDock.getBoundingClientRect();
+    alertDock.style.left = Math.max(8, Math.min(innerWidth - r.width - 8, p.fx * innerWidth)) + 'px';
+    alertDock.style.top = Math.max(8, Math.min(innerHeight - r.height - 8, p.fy * innerHeight)) + 'px';
+  }
+  alertDock.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !e.target.closest('.mod-alert')) return;
+    const r = alertDock.getBoundingClientRect();
+    const dx = e.clientX - r.left, dy = e.clientY - r.top;
+    let moved = false;
+    const move = ev => {
+      if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 5) return;
+      moved = true;
+      alertDock.classList.add('moved', 'dragging');
+      const w = alertDock.offsetWidth, h = alertDock.offsetHeight;
+      alertDock.style.left = Math.max(8, Math.min(innerWidth - w - 8, ev.clientX - dx)) + 'px';
+      alertDock.style.top = Math.max(8, Math.min(innerHeight - h - 8, ev.clientY - dy)) + 'px';
+    };
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      alertDock.classList.remove('dragging');
+      if (moved) store('home:alertPos', JSON.stringify({
+        fx: parseFloat(alertDock.style.left) / innerWidth,
+        fy: parseFloat(alertDock.style.top) / innerHeight,
+      }));
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  });
+  alertDock.addEventListener('dblclick', e => {
+    if (!e.target.closest('.mod-alert')) return;
+    try { localStorage.removeItem('home:alertPos'); } catch (err) { }
+    placeAlertDock();
+  });
+  addEventListener('resize', placeAlertDock);
+  // the dock is often empty when first placed; once alerts show up (and it
+  // grows) re-clamp a moved dock so it never spills past the screen edge
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      if (alertDock.classList.contains('moved') && !alertDock.classList.contains('dragging')) placeAlertDock();
+    }).observe(alertDock);
+  }
+  placeAlertDock();
+
   // personal local mods: a gitignored mods.js registers extra widgets here
   // (missing file is normal — the script tag silently removes itself)
   window.HOME_MODS = {
+    // where a widget should put its alert element (see .mod-alert)
+    alertHost: alertDock,
     register(id, def) {
       if (!id || !def || typeof def.mount !== 'function' || WIDGETS[id]) return;
       WIDGETS[id] = { name: def.name || id, blurb: def.blurb || '', mount: def.mount };
@@ -4801,6 +4878,7 @@ const bgApi = (function background() {
     for (const b of document.getElementById('clock-face-opts').children) b.classList.toggle('active', b.dataset.cface === c.face);
     // the analog face only exists as the big clock; a 12/24h format means nothing on it
     document.getElementById('clock-face-row').hidden = c.size !== 'big';
+    document.getElementById('clock-scale-row').hidden = c.size !== 'big';
     document.getElementById('clock-fmt-row').querySelector('.phase-opts').hidden = c.size === 'big' && c.face === 'analog';
     document.getElementById('clock-sec').checked = c.sec;
     const tzOn = document.getElementById('tz-on');
@@ -5437,6 +5515,101 @@ const bgApi = (function background() {
     });
   })();
 
+  /* ---------- big clock + greeting: size and ink ---------- */
+
+  // stored as percent; a function (not a const table) because the clock
+  // block calls it before this part of the file has run
+  function displayScale(key) {
+    const lim = key === 'home:greetScale' ? [80, 260] : [60, 220];
+    const v = parseInt(loadStored(key), 10);
+    return (isFinite(v) ? Math.max(lim[0], Math.min(lim[1], v)) : 100) / 100;
+  }
+  function applyDisplayScales() {
+    const root = document.documentElement.style;
+    root.setProperty('--clock-scale', String(displayScale('home:clockScale')));
+    root.setProperty('--greet-scale', String(displayScale('home:greetScale')));
+  }
+  (function wireScales() {
+    for (const [id, key] of [['clock-scale', 'home:clockScale'], ['greet-scale', 'home:greetScale']]) {
+      const sl = document.getElementById(id);
+      const val = document.getElementById(id + '-val');
+      sl.value = String(Math.round(displayScale(key) * 100));
+      val.textContent = sl.value + '%';
+      sl.addEventListener('input', () => {
+        store(key, sl.value);
+        val.textContent = sl.value + '%';
+        applyDisplayScales();
+        tick(); // redraw the analog face at its new size
+        sampleInk();
+      });
+    }
+    applyDisplayScales();
+  })();
+
+  // ink: 'auto' samples the background right behind the clock/greeting and
+  // picks light or dark text; light/dark/accent force one; 'theme' keeps the
+  // theme's panel text color (the old look)
+  const INKS = ['auto', 'light', 'dark', 'accent', 'theme'];
+  const inkMode = () => { const v = loadStored('home:ink'); return INKS.includes(v) ? v : 'auto'; };
+  const inkProbe = document.createElement('canvas');
+  inkProbe.width = 24; inkProbe.height = 8;
+  let inkAuto = 'light';
+  function setInkClass(name) {
+    for (const n of ['light', 'dark', 'accent']) document.body.classList.toggle('ink-' + n, n === name);
+  }
+  function sampleInk() {
+    const mode = inkMode();
+    if (mode !== 'auto') { setInkClass(mode === 'theme' ? null : mode); return; }
+    const stack = document.querySelector('.top-stack');
+    const bg = document.getElementById('bg');
+    const r = stack && stack.getBoundingClientRect();
+    if (r && r.width && r.height && bg && bg.width) {
+      // the area actually covered by text, a little padded
+      const items = [...stack.children].filter(el => !el.hidden).map(el => el.getBoundingClientRect()).filter(b => b.width);
+      if (items.length) {
+        const x0 = Math.min(...items.map(b => b.left)) - 16, x1 = Math.max(...items.map(b => b.right)) + 16;
+        const y0 = Math.min(...items.map(b => b.top)) - 8, y1 = Math.max(...items.map(b => b.bottom)) + 8;
+        const sx = bg.width / innerWidth, sy = bg.height / innerHeight;
+        try {
+          const g = inkProbe.getContext('2d', { willReadFrequently: true });
+          g.clearRect(0, 0, 24, 8);
+          g.drawImage(bg, Math.max(0, x0 * sx), Math.max(0, y0 * sy), Math.max(1, (x1 - x0) * sx), Math.max(1, (y1 - y0) * sy), 0, 0, 24, 8);
+          const d = g.getImageData(0, 0, 24, 8).data;
+          let lum = 0, n = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] < 16) continue;
+            lum += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+            n++;
+          }
+          if (n) {
+            const L = lum / n;
+            // hysteresis so a drifting photo doesn't flip the ink back and forth
+            if (L > 0.62) inkAuto = 'dark';
+            else if (L < 0.5) inkAuto = 'light';
+          }
+        } catch (e) { /* tainted canvas (cross-origin wallpaper): keep the last pick */ }
+      }
+    }
+    setInkClass(inkAuto);
+  }
+  (function wireInk() {
+    const opts = document.getElementById('ink-opts');
+    const render = () => { for (const b of opts.children) b.classList.toggle('active', b.dataset.ink === inkMode()); };
+    opts.addEventListener('click', e => {
+      const b = e.target.closest('button[data-ink]');
+      if (!b) return;
+      store('home:ink', b.dataset.ink);
+      render();
+      sampleInk();
+    });
+    render();
+    sampleInk(); // a sensible class right away (light until the first sample)
+    // the background drifts, crossfades and changes phase: re-check now and then
+    setTimeout(sampleInk, 300);
+    setTimeout(sampleInk, 1500);
+    setInterval(() => { if (!document.hidden) sampleInk(); }, 4000);
+  })();
+
   /* ---------- page font ---------- */
 
   // stored as a family name ('' = the default Inter + Silkscreen pair). Named
@@ -5615,12 +5788,14 @@ const bgApi = (function background() {
   function drawAnalogClock(t, showSec) {
     const cv = document.getElementById('analog-clock');
     if (!cv || !cv.getContext) return;
-    // back the 132px face with device pixels so it stays crisp on HiDPI screens
+    // back the face with device pixels so it stays crisp on HiDPI screens;
+    // it's drawn in a 132-unit space and scaled to the Layout → Scale size
     const S = 132, C = S / 2;
-    const dpr = Math.min(devicePixelRatio || 1, 3);
+    const k = displayScale('home:clockScale');
+    const dpr = Math.min(devicePixelRatio || 1, 3) * k;
     if (cv.width !== Math.round(S * dpr)) {
       cv.width = cv.height = Math.round(S * dpr);
-      cv.style.width = cv.style.height = S + 'px';
+      cv.style.width = cv.style.height = Math.round(S * k) + 'px';
     }
     const c = cv.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -5823,6 +5998,13 @@ const bgApi = (function background() {
       document.querySelectorAll('.mod-card.mod-float').forEach(card => dockCard(card, card.dataset.type));
       saveWidgetPos({});
       renderWidgetList();
+    });
+    document.getElementById('alert-reset').addEventListener('click', e => {
+      try { localStorage.removeItem('home:alertPos'); } catch (err) { }
+      placeAlertDock(); // back to bottom center
+      const b = e.currentTarget, label = b.textContent;
+      b.textContent = 'Reset ✓';
+      setTimeout(() => { b.textContent = label; }, 1200);
     });
     renderWidgetList();
   })();

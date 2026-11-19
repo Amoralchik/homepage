@@ -356,6 +356,8 @@ HOME_MODS.register('my-widget', {
 });
 ```
 
+Need a pop-up? Create an element with the `mod-alert` class (toggle `show` to display it) and append it to `HOME_MODS.alertHost`. All widget alerts share that dock: the visible ones stack without gaps, and you can drag the stack anywhere (double-click an alert to put it back).
+
 <details>
 <summary>Example: a live De Lijn bus tracker</summary>
 
