@@ -255,7 +255,7 @@ Overflow tucks into a "··· more" chip, favicons come from Chrome's cache, and
 
 <br>
 
-Open the panel with <kbd>W</kbd> (or switch widgets on in **Settings → Widgets**), and press a widget's **pin** to put it on the page — drag its header to move it anywhere (it snaps to a small grid and keeps its place when the window resizes). Pinned widgets stay when the side panel is closed; unpin, double-click the header or drop it back over the panel to dock it.
+Open the panel with <kbd>W</kbd> (or switch widgets on in **Settings → Widgets**), and press a widget's **pin** to put it on the page — drag its header to move it anywhere (it snaps to a small grid and keeps its place when the window resizes). Pinned widgets stay when the side panel is closed; unpin, double-click the header or drop it back over the panel to dock it. Happy with the layout? **Lock pinned widgets & alerts in place** (Settings → Widgets, or right-click the page) and stray drags or double-clicks won't move them.
 
 - **Greeting** — a phase-aware line above the search ("Good evening, Ada"); type your name in **Settings → Layout** and it switches on (toggle it under **Show → Greeting**).
 - **Quote** — a quote of the day from the built-in set plus your own (`Author, quote` per line, right under the Quote switch in **Settings → Widgets**); click the card or pick "Next quote" in the right-click menu for another.

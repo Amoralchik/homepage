@@ -3805,8 +3805,25 @@ const bgApi = (function background() {
     alertDock.style.left = Math.max(8, Math.min(innerWidth - r.width - 8, p.fx * innerWidth)) + 'px';
     alertDock.style.top = Math.max(8, Math.min(innerHeight - r.height - 8, p.fy * innerHeight)) + 'px';
   }
+  /* position lock: once things are where you want them, Settings → Widgets
+     (or the right-click menu) locks pinned widgets and the alert stack so a
+     stray drag or double-click can't move them. Pin/unpin buttons still work
+     — those are deliberate. */
+  function positionsLocked() { return loadStored('home:lockPos') === '1'; }
+  function applyPositionLock() {
+    const on = positionsLocked();
+    document.body.classList.toggle('pos-locked', on);
+    alertDock.title = on ? 'Positions are locked (Settings → Widgets)' : 'Drag to move · double-click to reset';
+    const cb = document.getElementById('lock-pos');
+    if (cb) cb.checked = on;
+  }
+  function setPositionLock(on) {
+    store('home:lockPos', on ? '1' : '0');
+    applyPositionLock();
+  }
+
   alertDock.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || !e.target.closest('.mod-alert')) return;
+    if (e.button !== 0 || !e.target.closest('.mod-alert') || positionsLocked()) return;
     const r = alertDock.getBoundingClientRect();
     const dx = e.clientX - r.left, dy = e.clientY - r.top;
     let moved = false;
@@ -3831,7 +3848,7 @@ const bgApi = (function background() {
     addEventListener('pointerup', up);
   });
   alertDock.addEventListener('dblclick', e => {
-    if (!e.target.closest('.mod-alert')) return;
+    if (!e.target.closest('.mod-alert') || positionsLocked()) return;
     try { localStorage.removeItem('home:alertPos'); } catch (err) { }
     placeAlertDock();
   });
@@ -3844,6 +3861,7 @@ const bgApi = (function background() {
     }).observe(alertDock);
   }
   placeAlertDock();
+  applyPositionLock();
 
   // personal local mods: a gitignored mods.js registers extra widgets here
   // (missing file is normal — the script tag silently removes itself)
@@ -5999,6 +6017,7 @@ const bgApi = (function background() {
       saveWidgetPos({});
       renderWidgetList();
     });
+    document.getElementById('lock-pos').addEventListener('change', e => setPositionLock(e.target.checked));
     document.getElementById('alert-reset').addEventListener('click', e => {
       try { localStorage.removeItem('home:alertPos'); } catch (err) { }
       placeAlertDock(); // back to bottom center
@@ -6106,6 +6125,7 @@ const bgApi = (function background() {
     if (!head) return;
     head.addEventListener('pointerdown', e => {
       if (e.button !== 0 || e.target.closest('.mod-remove, .mod-pin')) return;
+      if (positionsLocked()) return; // locked: no dragging, in or out of the panel
       const sx = e.clientX, sy = e.clientY;
       const rect = card.getBoundingClientRect();
       let moved = false;
@@ -6139,7 +6159,7 @@ const bgApi = (function background() {
       addEventListener('pointerup', up);
     });
     head.addEventListener('dblclick', e => {
-      if (e.target.closest('.mod-remove, .mod-pin')) return;
+      if (e.target.closest('.mod-remove, .mod-pin') || positionsLocked()) return;
       if (card.classList.contains('mod-float')) { dockCard(card, type); renderWidgetList(); }
     });
   }
@@ -6557,6 +6577,10 @@ const bgApi = (function background() {
       items.push(['Next quote', () => document.dispatchEvent(new Event('home:next-quote'))]);
     }
     items.push(['Toggle widgets  (W)', () => setLayer(!modLayer.classList.contains('open'))]);
+    if (document.querySelector('.mod-card.mod-float, #mod-alerts .mod-alert')) {
+      const locked = positionsLocked();
+      items.push([locked ? 'Unlock widget positions' : 'Lock widget positions', () => setPositionLock(!locked)]);
+    }
     items.push(['Settings', () => setSettings(true)]);
     items.push(['Help  (?)', () => toggleHelp(true)]);
     openCtx(e.clientX, e.clientY, items);

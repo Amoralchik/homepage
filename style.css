@@ -2343,6 +2343,10 @@ body.pomo-focus .mod-card.mod-float:not([data-type="pomo"]) { display: none; }
 }
 
 .mod-card.mod-float .mod-card-head { cursor: grab; }
+/* positions locked (Settings → Widgets): nothing looks draggable */
+body.pos-locked .mod-card .mod-card-head,
+body.pos-locked .mod-card.mod-float .mod-card-head,
+body.pos-locked .mod-alerts .mod-alert { cursor: default; }
 .mod-card.mod-float .mod-card-head:active { cursor: grabbing; }
 
 /* ---------- page context menu ---------- */
