@@ -22,7 +22,7 @@
 - **13 backgrounds × 12 themes** — Scene, Aurora, Retro, Lamp, Dither, Halftone, Particles, Solid and more, every one theme- and phase-aware — plus your own **photos and videos** with blur / brightness controls.
 - **An omnibox, not just a box** — autocomplete, bangs (`!yt`, `!gh`, …), recent searches, URL detection, an instant calculator, and your open tabs and bookmarks — bring your own engine with a `{q}` URL template.
 - **Live weather** — temperature in the pill (click it for feels-like, humidity, wind, sun times and the next hours) and rain, snow, fog or storms drawn into the scenery, via [Open-Meteo](https://open-meteo.com) with no API key.
-- **Widgets that work** — a greeting that knows your name, a quote of the day, Markdown-lite notes and to-dos, a pomodoro timer with focus mode and a tab-title countdown — pin any widget to the page and drag it wherever you like.
+- **Widgets that work** — a greeting that knows your name, a quote of the day, Markdown-lite notes and to-dos, a pomodoro timer with focus mode and a tab-title countdown — pin any widget to the page and drag it wherever you like, snapping to a grid and to guide lines for the page centre and other widgets.
 - **Your links, your page** — a custom quick-links bar with folders and drag-reorder, `Alt`+`1`–`9` to open, a right-click menu on the page, custom CSS / fonts, and settings you can export, import and share.
 - **Private by design** — no accounts, no telemetry; everything lives in `localStorage` / IndexedDB on your machine.
 - **Zero dependencies** — plain HTML, CSS and JavaScript. No bundler, no framework, nothing to build.
@@ -103,7 +103,7 @@
       <sub>Press <kbd>W</kbd> for a HUD of small persistent widgets — a quote of the day,
       Markdown-lite notes, a pomodoro timer, a bus tracker, or your own via
       <a href="#personal-mods-local-only"><code>mods.js</code></a>. Drag a widget by its
-      header to pin it anywhere on the page.</sub>
+      header to pin it anywhere on the page. It snaps to a grid and to centre guides.</sub>
     </td>
   </tr>
 </table>
@@ -255,7 +255,7 @@ Overflow tucks into a "··· more" chip, favicons come from Chrome's cache, and
 
 <br>
 
-Open the panel with <kbd>W</kbd> (or switch widgets on in **Settings → Widgets**), and press a widget's **pin** to put it on the page — drag its header to move it anywhere (it snaps to a small grid and keeps its place when the window resizes). Pinned widgets stay when the side panel is closed; unpin, double-click the header or drop it back over the panel to dock it. Happy with the layout? **Lock pinned widgets & alerts in place** (Settings → Widgets, or right-click the page) and stray drags or double-clicks won't move them.
+Open the panel with <kbd>W</kbd> (or switch widgets on in **Settings → Widgets**), and press a widget's **pin** to put it on the page — drag its header to move it anywhere (it keeps its place when the window resizes). While you drag a widget or the alert stack, it snaps to a grid and to **guide lines**. The lines mark the page centre (pink) and the edges and centres of your other pinned widgets (blue). Pick the grid in **Settings → Widgets → Snap**: Off, Fine (8px, the default), Grid (24px) or Wide (48px). Untick **Guides** to turn alignment off, or hold <kbd>Alt</kbd> while dragging to place freely. Anything dropped at the page centre stays centred at every window size. Pinned widgets stay when the side panel is closed; unpin, double-click the header or drop it back over the panel to dock it. Happy with the layout? **Lock pinned widgets & alerts in place** (Settings → Widgets, or right-click the page) and stray drags or double-clicks won't move them.
 
 - **Greeting** — a phase-aware line above the search ("Good evening, Ada"); type your name in **Settings → Layout** and it switches on (toggle it under **Show → Greeting**).
 - **Quote** — a quote of the day from the built-in set plus your own (`Author, quote` per line, right under the Quote switch in **Settings → Widgets**); click the card or pick "Next quote" in the right-click menu for another.

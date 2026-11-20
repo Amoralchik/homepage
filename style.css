@@ -2349,6 +2349,41 @@ body.pos-locked .mod-card.mod-float .mod-card-head,
 body.pos-locked .mod-alerts .mod-alert { cursor: default; }
 .mod-card.mod-float .mod-card-head:active { cursor: grabbing; }
 
+/* snap grid & alignment guides, shown only while a widget / the alert stack
+   is being dragged (Settings → Widgets → Snap) */
+.snap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 13; /* under pinned widgets (14) and the alert stack (16) */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.snap-overlay.on { opacity: 1; }
+.snap-overlay.show-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--text) 14%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--text) 14%, transparent) 1px, transparent 1px);
+  background-size: var(--snap) var(--snap);
+}
+/* faint page-centre cross so "centred" is easy to aim for */
+.snap-overlay.show-centre::before,
+.snap-overlay.show-centre::after {
+  content: '';
+  position: absolute;
+  border: 0 dashed color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.snap-overlay.show-centre::before { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
+.snap-overlay.show-centre::after { top: 50%; left: 0; right: 0; border-top-width: 1px; }
+.snap-guide {
+  position: absolute;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+.snap-guide.v { top: 0; bottom: 0; width: 1px; }
+.snap-guide.h { left: 0; right: 0; height: 1px; }
+.snap-guide.centre { background: #ff5fa2; box-shadow: 0 0 6px #ff5fa2; }
+
 /* ---------- page context menu ---------- */
 
 .ctx-menu {
