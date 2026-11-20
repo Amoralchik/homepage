@@ -3673,8 +3673,9 @@ const bgApi = (function background() {
     widgetCleanups.set(id, def.mount ? def.mount(body) : null);
 
     // free placement: a saved spot pins the card onto the page instead of the panel
-    const savedPos = posToPx(loadWidgetPos()[type]);
-    if (savedPos) pinCard(card, savedPos.x, savedPos.y);
+    const stored = loadWidgetPos()[type];
+    const savedPos = posToPx(stored);
+    if (savedPos) { pinCard(card, savedPos.x, savedPos.y); placeStored(card, stored); }
     bindCardDrag(card, type);
 
     if (!restore) {
@@ -3802,9 +3803,103 @@ const bgApi = (function background() {
     }
     alertDock.classList.add('moved');
     const r = alertDock.getBoundingClientRect();
-    alertDock.style.left = Math.max(8, Math.min(innerWidth - r.width - 8, p.fx * innerWidth)) + 'px';
-    alertDock.style.top = Math.max(8, Math.min(innerHeight - r.height - 8, p.fy * innerHeight)) + 'px';
+    const x = p.cx ? (innerWidth - r.width) / 2 : p.fx * innerWidth;
+    const y = p.cy ? (innerHeight - r.height) / 2 : p.fy * innerHeight;
+    alertDock.style.left = Math.max(8, Math.min(innerWidth - r.width - 8, x)) + 'px';
+    alertDock.style.top = Math.max(8, Math.min(innerHeight - r.height - 8, y)) + 'px';
   }
+  /* ---------- snap grid & alignment guides ----------
+     While a pinned widget or the alert stack is dragged, its position snaps
+     to a grid (Settings → Widgets → Snap: off / fine 8px / grid 24px / wide
+     48px), and — when guides are on — to the page centre and the edges and
+     centres of the other pinned things, drawing a guide line for each match.
+     Hold Alt while dragging to place freely. (Function declarations only:
+     restored widgets are pinned before this part of the file has run.) */
+  function snapGridSize() {
+    const raw = loadStored('home:snapGrid');
+    if (raw == null || raw === '') return 8; // the old fixed 8px behaviour
+    const v = +raw;
+    return [0, 8, 24, 48].includes(v) ? v : 8;
+  }
+  function snapGuidesOn() { return loadStored('home:snapGuides') !== '0'; }
+  function snapOverlay() {
+    let o = document.getElementById('snap-overlay');
+    if (!o) {
+      o = document.createElement('div');
+      o.id = 'snap-overlay';
+      o.className = 'snap-overlay';
+      o.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(o);
+    }
+    return o;
+  }
+  function snapBegin() {
+    const o = snapOverlay(), g = snapGridSize();
+    o.style.setProperty('--snap', g + 'px');
+    o.classList.toggle('show-grid', g >= 24);
+    o.classList.toggle('show-centre', snapGuidesOn());
+    o.classList.add('on');
+  }
+  function snapEnd() {
+    const o = document.getElementById('snap-overlay');
+    if (!o) return;
+    o.classList.remove('on');
+    o.querySelectorAll('.snap-guide').forEach(n => n.remove());
+  }
+  // rects of everything a dragged element can line up with
+  function snapTargets(el) {
+    const rects = [];
+    document.querySelectorAll('.mod-card.mod-float').forEach(c => {
+      if (c !== el && c.offsetWidth) rects.push(c.getBoundingClientRect());
+    });
+    const dock = document.getElementById('mod-alerts');
+    if (dock && dock !== el && dock.offsetWidth && dock.offsetHeight) rects.push(dock.getBoundingClientRect());
+    return rects;
+  }
+  // one axis: the closest edge/centre match within reach, else the grid
+  function snapAxis(pos, size, lines, grid) {
+    const pts = [0, size / 2, size];
+    let best = null;
+    for (const l of lines) for (const off of pts) {
+      const d = l.at - (pos + off);
+      if (Math.abs(d) <= 6 && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, line: l };
+    }
+    if (best) return { pos: pos + best.d, line: best.line };
+    return { pos: grid ? Math.round(pos / grid) * grid : Math.round(pos), line: null };
+  }
+  // snapped top-left for an element of size w×h dragged to (x, y)
+  function snapPoint(el, x, y, w, h, free) {
+    const o = snapOverlay();
+    o.querySelectorAll('.snap-guide').forEach(n => n.remove());
+    if (free) return { x: Math.round(x), y: Math.round(y) };
+    const xs = [], ys = [];
+    if (snapGuidesOn()) {
+      xs.push({ at: innerWidth / 2, centre: true });
+      ys.push({ at: innerHeight / 2, centre: true });
+      for (const r of snapTargets(el)) {
+        xs.push({ at: r.left }, { at: r.left + r.width / 2 }, { at: r.right });
+        ys.push({ at: r.top }, { at: r.top + r.height / 2 }, { at: r.bottom });
+      }
+    }
+    const g = snapGridSize();
+    const sx = snapAxis(x, w, xs, g), sy = snapAxis(y, h, ys, g);
+    for (const [hit, axis] of [[sx.line, 'v'], [sy.line, 'h']]) {
+      if (!hit) continue;
+      const line = document.createElement('div');
+      line.className = `snap-guide ${axis}` + (hit.centre ? ' centre' : '');
+      line.style[axis === 'v' ? 'left' : 'top'] = Math.round(hit.at) + 'px';
+      o.appendChild(line);
+    }
+    return { x: sx.pos, y: sy.pos };
+  }
+  // is a w×h box at (x, y) centred on the page? (stored so it stays centred on resize)
+  function centreFlags(x, y, w, h) {
+    return {
+      cx: Math.abs(x + w / 2 - innerWidth / 2) < 1.5,
+      cy: Math.abs(y + h / 2 - innerHeight / 2) < 1.5,
+    };
+  }
+
   /* position lock: once things are where you want them, Settings → Widgets
      (or the right-click menu) locks pinned widgets and the alert stack so a
      stray drag or double-click can't move them. Pin/unpin buttons still work
@@ -3829,20 +3924,23 @@ const bgApi = (function background() {
     let moved = false;
     const move = ev => {
       if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 5) return;
+      if (!moved) snapBegin();
       moved = true;
       alertDock.classList.add('moved', 'dragging');
       const w = alertDock.offsetWidth, h = alertDock.offsetHeight;
-      alertDock.style.left = Math.max(8, Math.min(innerWidth - w - 8, ev.clientX - dx)) + 'px';
-      alertDock.style.top = Math.max(8, Math.min(innerHeight - h - 8, ev.clientY - dy)) + 'px';
+      const s = snapPoint(alertDock, ev.clientX - dx, ev.clientY - dy, w, h, ev.altKey);
+      alertDock.style.left = Math.max(8, Math.min(innerWidth - w - 8, s.x)) + 'px';
+      alertDock.style.top = Math.max(8, Math.min(innerHeight - h - 8, s.y)) + 'px';
     };
     const up = () => {
       removeEventListener('pointermove', move);
       removeEventListener('pointerup', up);
       alertDock.classList.remove('dragging');
-      if (moved) store('home:alertPos', JSON.stringify({
-        fx: parseFloat(alertDock.style.left) / innerWidth,
-        fy: parseFloat(alertDock.style.top) / innerHeight,
-      }));
+      if (!moved) return;
+      snapEnd();
+      const x = parseFloat(alertDock.style.left), y = parseFloat(alertDock.style.top);
+      const c = centreFlags(x, y, alertDock.offsetWidth, alertDock.offsetHeight);
+      store('home:alertPos', JSON.stringify({ fx: x / innerWidth, fy: y / innerHeight, cx: c.cx, cy: c.cy }));
     };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
@@ -6018,6 +6116,19 @@ const bgApi = (function background() {
       renderWidgetList();
     });
     document.getElementById('lock-pos').addEventListener('change', e => setPositionLock(e.target.checked));
+    const snapOpts = document.getElementById('snap-opts');
+    const markSnap = () => snapOpts.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('active', +b.dataset.snap === snapGridSize()));
+    snapOpts.addEventListener('click', e => {
+      const b = e.target.closest('button[data-snap]');
+      if (!b) return;
+      store('home:snapGrid', b.dataset.snap);
+      markSnap();
+    });
+    markSnap();
+    const guides = document.getElementById('snap-guides');
+    guides.checked = snapGuidesOn();
+    guides.addEventListener('change', () => store('home:snapGuides', guides.checked ? '1' : '0'));
     document.getElementById('alert-reset').addEventListener('click', e => {
       try { localStorage.removeItem('home:alertPos'); } catch (err) { }
       placeAlertDock(); // back to bottom center
@@ -6043,18 +6154,32 @@ const bgApi = (function background() {
     if (isFinite(p.x) && isFinite(p.y)) return { x: p.x, y: p.y };
     return null;
   }
-  // pinned widgets snap to an 8px grid so rows line up neatly. (A literal, not a
-  // const: restored widgets are pinned before this part of the file has run.)
+  // keep a card on screen; snapping to the grid / guides happens while dragging
+  // (snapPoint), so restored and resized spots aren't nudged off their alignment
   function clampPos(card, x, y) {
     const w = card.offsetWidth || 250, h = card.offsetHeight || 120;
     return {
-      x: Math.max(8, Math.min(innerWidth - w - 8, Math.round(x / 8) * 8)),
-      y: Math.max(8, Math.min(innerHeight - Math.min(h, 120) - 8, Math.round(y / 8) * 8)),
+      x: Math.max(8, Math.min(innerWidth - w - 8, x)),
+      y: Math.max(8, Math.min(innerHeight - Math.min(h, 120) - 8, y)),
     };
+  }
+  // a card saved centred on the page stays centred whatever the window size
+  function placeStored(card, p) {
+    const px = posToPx(p);
+    if (!px) return;
+    if (p.cx) px.x = (innerWidth - card.offsetWidth) / 2;
+    if (p.cy) px.y = (innerHeight - card.offsetHeight) / 2;
+    const q = clampPos(card, px.x, px.y);
+    card.style.left = q.x + 'px';
+    card.style.top = q.y + 'px';
   }
   function savePinned(card, type) {
     const p = loadWidgetPos();
-    p[type] = { fx: (parseFloat(card.style.left) || 0) / innerWidth, fy: (parseFloat(card.style.top) || 0) / innerHeight };
+    const x = parseFloat(card.style.left) || 0, y = parseFloat(card.style.top) || 0;
+    const c = centreFlags(x, y, card.offsetWidth, card.offsetHeight);
+    p[type] = { fx: x / innerWidth, fy: y / innerHeight };
+    if (c.cx) p[type].cx = true;
+    if (c.cy) p[type].cy = true;
     saveWidgetPos(p);
   }
   function syncPinBtn(card) {
@@ -6112,13 +6237,7 @@ const bgApi = (function background() {
   // keep pinned cards on screen (and in proportion) when the window resizes
   addEventListener('resize', () => {
     const pos = loadWidgetPos();
-    document.querySelectorAll('.mod-card.mod-float').forEach(card => {
-      const px = posToPx(pos[card.dataset.type]);
-      if (!px) return;
-      const p = clampPos(card, px.x, px.y);
-      card.style.left = p.x + 'px';
-      card.style.top = p.y + 'px';
-    });
+    document.querySelectorAll('.mod-card.mod-float').forEach(card => placeStored(card, pos[card.dataset.type]));
   });
   function bindCardDrag(card, type) {
     const head = card.querySelector('.mod-card-head');
@@ -6135,8 +6254,11 @@ const bgApi = (function background() {
           moved = true;
           if (card.parentElement === modBody) pinCard(card, rect.left, rect.top);
           card.classList.add('dragging');
+          snapBegin();
         }
-        const p = clampPos(card, rect.left + ev.clientX - sx, rect.top + ev.clientY - sy);
+        const s = snapPoint(card, rect.left + ev.clientX - sx, rect.top + ev.clientY - sy,
+          card.offsetWidth, card.offsetHeight, ev.altKey);
+        const p = clampPos(card, s.x, s.y);
         card.style.left = p.x + 'px';
         card.style.top = p.y + 'px';
       };
@@ -6145,6 +6267,7 @@ const bgApi = (function background() {
         removeEventListener('pointerup', up);
         card.classList.remove('dragging');
         if (!moved) return;
+        snapEnd();
         const r = modLayer.getBoundingClientRect();
         if (modLayer.classList.contains('open') &&
             ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {

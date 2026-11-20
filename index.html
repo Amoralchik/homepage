@@ -384,6 +384,21 @@
         </div>
       </div>
       <div class="set-row">
+        <span class="set-name">Snap</span>
+        <div class="phase-opts" id="snap-opts" role="group" aria-label="Snap grid while dragging">
+          <button type="button" data-snap="0" title="No grid — place to the pixel">Off</button>
+          <button type="button" data-snap="8" title="8px grid">Fine</button>
+          <button type="button" data-snap="24" title="24px grid, shown while dragging">Grid</button>
+          <button type="button" data-snap="48" title="48px grid, shown while dragging">Wide</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-name">Guides</span>
+        <label class="set-check"><input type="checkbox" id="snap-guides" /> Align to the page centre &amp; other widgets</label>
+      </div>
+      <p class="set-note">While dragging, guide lines show what a widget or the alert stack lines up with — pink for the
+        page centre. Hold <span class="key">Alt</span> to place freely.</p>
+      <div class="set-row">
         <span class="set-name">Lock</span>
         <label class="set-check"><input type="checkbox" id="lock-pos" /> Lock pinned widgets &amp; alerts in place</label>
       </div>
